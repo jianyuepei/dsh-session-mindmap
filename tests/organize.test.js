@@ -9,7 +9,14 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { DEFAULT_KINDS } from "../lib/schema.js";
-import { buildMergePrompt, buildSystemPrompt, buildUserPrompt, collectStream, generateMindMap } from "../lib/organize.js";
+import {
+  buildMergePrompt,
+  buildSystemPrompt,
+  buildUserPrompt,
+  collectStream,
+  generateMindMap,
+  serializePartials,
+} from "../lib/organize.js";
 
 /** A model answer shaped like the prompt asks for. */
 const GOOD = JSON.stringify({
@@ -39,6 +46,25 @@ test("the system prompt switches the file rule with the enabled kinds", () => {
   const withFile = buildSystemPrompt({ kinds: [...DEFAULT_KINDS, "file"], language: "zh" });
   assert.match(withFile, /放进 `file` 节点/);
   assert.doesNotMatch(withFile, /本次不需要文件维度/);
+});
+
+test("the rubric defines each enabled kind and adapts the self-check", () => {
+  const full = buildSystemPrompt({ kinds: [...DEFAULT_KINDS], language: "zh" });
+  assert.match(full, /待验证的假设/);
+  assert.match(full, /必须把\*\*理由\*\*写进 detail/);
+  assert.match(full, /没做完的事、没定的问题/);
+  assert.match(full, /那就是漏了，补上再输出/);
+
+  // Only conclusion enabled: no todo/question rules, and no self-check about them.
+  const narrow = buildSystemPrompt({ kinds: ["topic", "conclusion"], language: "zh" });
+  assert.match(narrow, /conclusion：会话里得出的、有依据的判断/);
+  assert.doesNotMatch(narrow, /待验证的假设/);
+  assert.doesNotMatch(narrow, /没定的问题/);
+  assert.doesNotMatch(narrow, /自检/);
+
+  // A pure topic map needs no rubric at all.
+  const topics = buildSystemPrompt({ kinds: ["topic"], language: "zh" });
+  assert.doesNotMatch(topics, /判定标准/);
 });
 
 test("the user prompt carries the session title, focus and part marker", () => {
@@ -177,4 +203,26 @@ test("an empty turn list is refused before any model call", async () => {
       }),
     /没有可用于生成脑图的内容/,
   );
+});
+
+test("partial maps are bounded before the merge call", () => {
+  const map = {
+    title: "段",
+    root: { label: "根", kind: "topic", detail: "x".repeat(200), children: [{ label: "子", kind: "todo", detail: "y".repeat(200) }] },
+  };
+  const small = serializePartials([map, map]);
+  assert.match(small, /### 第 1 段/);
+  assert.match(small, /### 第 2 段/);
+  assert.match(small, /"detail":"x{10}/, "details survive while there is room");
+
+  // Over budget: details go first, structure stays.
+  const lean = serializePartials([map, map], 400);
+  assert.doesNotMatch(lean, /"detail"/);
+  assert.match(lean, /"label":"根"/);
+  assert.match(lean, /"kind":"todo"/);
+
+  // Way over budget: truncation is explicit rather than silent.
+  const cut = serializePartials([map, map], 60);
+  assert.match(cut, /超出预算的部分已截断/);
+  assert.ok(cut.length < 200);
 });

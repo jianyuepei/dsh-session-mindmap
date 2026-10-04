@@ -14,6 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { runMindMap } from "../lib/pipeline.js";
+import { createArtifactRegistry, handleArtifactRequest } from "../lib/serve.js";
 
 const T0 = 1_700_000_000_000;
 
@@ -124,6 +125,28 @@ function payloadOf(html) {
   return JSON.parse(match[1]);
 }
 
+/** Minimal `ServerResponse` stub, mirroring tests/serve.test.js. */
+function fakeResponse() {
+  const state = { status: 0, headers: {}, body: undefined };
+  return {
+    state,
+    writeHead(status, headers) {
+      state.status = status;
+      state.headers = headers ?? {};
+      return this;
+    },
+    end(body) {
+      state.body = body;
+      return this;
+    },
+  };
+}
+
+/** Minimal `IncomingMessage` stub; loopback and same-origin by default. */
+function fakeRequest({ method = "GET", url = "/", headers = {}, address = "127.0.0.1" } = {}) {
+  return { method, url, headers, socket: { remoteAddress: address } };
+}
+
 /** Every kind present in a map, depth-first. */
 function kindsOf(root) {
   const kinds = [];
@@ -151,6 +174,7 @@ test("the pipeline writes a self-contained HTML artifact", async () => {
   assert.equal(state.streams, 1);
   assert.ok(result.htmlPath.startsWith(join(workspace, ".dsh", "mindmap")));
   assert.ok(existsSync(result.htmlPath), "the artifact must exist");
+  assert.equal(result.viewPath, "", "no registry means no link to serve");
 
   const html = await readFile(result.htmlPath, "utf8");
   assert.match(html, /端到端测试会话/);
@@ -160,6 +184,22 @@ test("the pipeline writes a self-contained HTML artifact", async () => {
 
   // `file` is not in the default kinds, so it degrades to a topic node.
   assert.ok(!kindsOf(payloadOf(html).map.root).includes("file"), "file nodes stay out unless enabled");
+});
+
+test("a registered artifact comes back as a clickable link that serves the file", async () => {
+  const workspace = await makeWorkspace();
+  const { ctx } = fakeContext({ workspace });
+  const registry = createArtifactRegistry();
+  const result = await runMindMap(ctx, {}, { sessionId: "session-test", registry });
+
+  assert.match(result.viewPath, /^\/session-mindmap\/artifact\?id=[0-9a-f]{16}$/);
+
+  // The link the user clicks must resolve to the file that was just written.
+  const res = fakeResponse();
+  await handleArtifactRequest(fakeRequest({ url: result.viewPath }), res, { registry });
+  assert.equal(res.state.status, 200);
+  assert.equal(Buffer.from(res.state.body).toString("utf8"), await readFile(result.htmlPath, "utf8"));
+  assert.match(String(res.state.body), /端到端测试会话/);
 });
 
 test("a second run for an unchanged session is served from the cache", async () => {
@@ -199,6 +239,33 @@ test("enabling the file kind keeps file nodes", async () => {
   const result = await runMindMap(ctx, {}, { sessionId: "session-test", kinds: "topic,file" });
   const html = await readFile(result.htmlPath, "utf8");
   assert.ok(kindsOf(payloadOf(html).map.root).includes("file"));
+});
+
+test("a per-call language override reaches the prompts and the artifact", async () => {
+  const workspace = await makeWorkspace();
+  const { ctx } = fakeContext({ workspace });
+  const prompts = [];
+  const englishCtx = {
+    get(key) {
+      const inner = ctx.get(key);
+      if (key !== "llm") return inner;
+      return {
+        stream(options) {
+          prompts.push(options.system);
+          return inner.stream(options);
+        },
+      };
+    },
+  };
+
+  const result = await runMindMap(englishCtx, {}, { sessionId: "session-test", language: "en" });
+  assert.equal(result.language, "en");
+  assert.match(prompts[0], /英语/, "the prompt must ask for English nodes");
+
+  const html = await readFile(result.htmlPath, "utf8");
+  assert.match(html, /<html lang="en"/);
+  assert.match(html, /Copy outline|Fit/);
+  assert.deepEqual(payloadOf(html).segments.length > 0, true);
 });
 
 test("a session id resolves through `last`", async () => {

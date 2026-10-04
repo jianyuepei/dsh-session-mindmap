@@ -38,6 +38,7 @@ footer{padding:6px 16px;color:var(--dim);font-size:11px;background:var(--chrome)
     <button data-act="collapse">折叠</button>
     <button data-act="fit">适应窗口</button>
     <button data-act="png">PNG</button>
+    <button data-act="copy">复制大纲</button>
     <button data-act="md">Markdown</button>
     <button data-act="mmd">Mermaid</button>
     <button data-act="theme">主题</button>
@@ -47,7 +48,7 @@ footer{padding:6px 16px;color:var(--dim);font-size:11px;background:var(--chrome)
 <main id="stage"><svg id="canvas" xmlns="http://www.w3.org/2000/svg"><g id="world"></g></svg></main>
 <div id="tip" hidden></div>
 <footer>点击节点折叠/展开 · 拖拽平移 · 滚轮缩放 · 由 dsh-session-mindmap 生成</footer>
-<script type="application/json" id="dsh-mindmap-data">{"map":{"title":"DSH 会话脑图插件设计","root":{"id":"n1","label":"会话脑图插件","kind":"topic","detail":"把会话核心内容整理成可离线打开的 HTML 脑图","refs":{"seq":[]},"children":[{"id":"n2","label":"需求与边界","kind":"topic","refs":{"seq":[]},"children":[{"id":"n3","label":"后置、人工触发，一个阶段生成一次","kind":"topic","refs":{"seq":[]},"children":[]},{"id":"n4","label":"只交付 HTML，不做 GUI 面板","kind":"topic","refs":{"seq":[]},"children":[]},{"id":"n5","label":"不做多会话汇总与自动批量","kind":"topic","refs":{"seq":[]},"children":[]}]},{"id":"n6","label":"技术约束","kind":"topic","refs":{"seq":[]},"children":[{"id":"n7","label":"GUI 没有 Mermaid / markmap 渲染器","kind":"conclusion","detail":"所以图必须由生成的 HTML 自己画","refs":{"seq":[]},"children":[]},{"id":"n8","label":"会话日志是多帧追加的 zstd","kind":"conclusion","detail":"只能走 ctx.sessionQuery，不能直接解压文件","refs":{"seq":[]},"children":[]}]},{"id":"n9","label":"关键决策","kind":"decision","detail":"每条都写了理由，方便后来的人理解","refs":{"seq":[]},"children":[{"id":"n10","label":"纯 Host 插件，零构建 ESM JS","kind":"decision","detail":"克隆即可改、即可装，贡献者不需要构建链","refs":{"seq":[]},"children":[]},{"id":"n11","label":"必走 LLM，失败不静默降级","kind":"decision","detail":"长得像脑图的目录树比报错更误导","refs":{"seq":[]},"children":[]},{"id":"n12","label":"读模型表面而不是全量日志","kind":"decision","detail":"更贴近“这个会话到底聊了什么”","refs":{"seq":[]},"children":[]}]},{"id":"n13","label":"待办","kind":"todo","refs":{"seq":[]},"children":[{"id":"n14","label":"在真实会话上跑一遍并人工核对节点质量","kind":"todo","refs":{"seq":[]},"children":[]},{"id":"n15","label":"补一份英文 README 与 CI","kind":"todo","refs":{"seq":[]},"children":[]}]},{"id":"n16","label":"未决问题","kind":"question","refs":{"seq":[]},"children":[{"id":"n17","label":"present 交付的 HTML 能否在 GUI 内预览","kind":"question","refs":{"seq":[]},"children":[]},{"id":"n18","label":"长会话的分段合并质量是否稳定","kind":"question","refs":{"seq":[]},"children":[]}]}]},"nodeCount":18,"truncated":false},"markdown":"# DSH 会话脑图插件设计\n\n> session `session-demo` · 18 轮 · model `deepseek/chat` · 2026-10-04 02:00\n- 会话脑图插件\n  - 需求与边界\n    - 后置、人工触发，一个阶段生成一次\n    - 只交付 HTML，不做 GUI 面板\n    - 不做多会话汇总与自动批量\n  - 技术约束\n    - GUI 没有 Mermaid / markmap 渲染器 `结论`\n      所以图必须由生成的 HTML 自己画\n    - 会话日志是多帧追加的 zstd `结论`\n      只能走 ctx.sessionQuery，不能直接解压文件\n  - 关键决策 `决策`\n    每条都写了理由，方便后来的人理解\n    - 纯 Host 插件，零构建 ESM JS `决策`\n      克隆即可改、即可装，贡献者不需要构建链\n    - 必走 LLM，失败不静默降级 `决策`\n      长得像脑图的目录树比报错更误导\n    - 读模型表面而不是全量日志 `决策`\n      更贴近“这个会话到底聊了什么”\n  - 待办 `待办`\n    - 在真实会话上跑一遍并人工核对节点质量 `待办`\n    - 补一份英文 README 与 CI `待办`\n  - 未决问题 `未决问题`\n    - present 交付的 HTML 能否在 GUI 内预览 `未决问题`\n    - 长会话的分段合并质量是否稳定 `未决问题`\n","mermaid":"mindmap\n  root((会话脑图插件))\n    需求与边界\n      后置、人工触发，一个阶段生成一次\n      只交付 HTML，不做 GUI 面板\n      不做多会话汇总与自动批量\n    技术约束\n      GUI 没有 Mermaid / markmap 渲染器\n      会话日志是多帧追加的 zstd\n    关键决策\n      纯 Host 插件，零构建 ESM JS\n      必走 LLM，失败不静默降级\n      读模型表面而不是全量日志\n    待办\n      在真实会话上跑一遍并人工核对节点质量\n      补一份英文 README 与 CI\n    未决问题\n      present 交付的 HTML 能否在 GUI 内预览\n      长会话的分段合并质量是否稳定\n","shortLang":"zh","kindLabels":{"topic":"主题","conclusion":"结论","decision":"决策","todo":"待办","question":"未决问题","file":"涉及文件"},"fileBase":"demo"}</script>
+<script type="application/json" id="dsh-mindmap-data">{"map":{"title":"DSH 会话脑图插件设计","root":{"id":"n1","label":"会话脑图插件","kind":"topic","detail":"把会话核心内容整理成可离线打开的 HTML 脑图","refs":{"seq":[]},"children":[{"id":"n2","label":"需求与边界","kind":"topic","refs":{"seq":[]},"children":[{"id":"n3","label":"后置、人工触发，一个阶段生成一次","kind":"topic","refs":{"seq":[]},"children":[]},{"id":"n4","label":"只交付 HTML，不做 GUI 面板","kind":"topic","refs":{"seq":[]},"children":[]},{"id":"n5","label":"不做多会话汇总与自动批量","kind":"topic","refs":{"seq":[]},"children":[]}]},{"id":"n6","label":"技术约束","kind":"topic","refs":{"seq":[]},"children":[{"id":"n7","label":"GUI 没有 Mermaid / markmap 渲染器","kind":"conclusion","detail":"所以图必须由生成的 HTML 自己画","refs":{"seq":[]},"children":[]},{"id":"n8","label":"会话日志是多帧追加的 zstd","kind":"conclusion","detail":"只能走 ctx.sessionQuery，不能直接解压文件","refs":{"seq":[]},"children":[]}]},{"id":"n9","label":"关键决策","kind":"decision","detail":"每条都写了理由，方便后来的人理解","refs":{"seq":[]},"children":[{"id":"n10","label":"纯 Host 插件，零构建 ESM JS","kind":"decision","detail":"克隆即可改、即可装，贡献者不需要构建链","refs":{"seq":[]},"children":[]},{"id":"n11","label":"必走 LLM，失败不静默降级","kind":"decision","detail":"长得像脑图的目录树比报错更误导","refs":{"seq":[]},"children":[]},{"id":"n12","label":"读模型表面而不是全量日志","kind":"decision","detail":"更贴近“这个会话到底聊了什么”","refs":{"seq":[]},"children":[]}]},{"id":"n13","label":"待办","kind":"todo","refs":{"seq":[]},"children":[{"id":"n14","label":"在真实会话上跑一遍并人工核对节点质量","kind":"todo","refs":{"seq":[]},"children":[]},{"id":"n15","label":"补一份英文 README 与 CI","kind":"todo","refs":{"seq":[]},"children":[]}]},{"id":"n16","label":"未决问题","kind":"question","refs":{"seq":[]},"children":[{"id":"n17","label":"present 交付的 HTML 能否在 GUI 内预览","kind":"question","refs":{"seq":[]},"children":[]},{"id":"n18","label":"长会话的分段合并质量是否稳定","kind":"question","refs":{"seq":[]},"children":[]}]}]},"nodeCount":18,"truncated":false},"markdown":"# DSH 会话脑图插件设计\n\n> session `session-demo` · 18 轮 · model `deepseek/chat` · 2026-10-04 02:00\n- 会话脑图插件\n  - 需求与边界\n    - 后置、人工触发，一个阶段生成一次\n    - 只交付 HTML，不做 GUI 面板\n    - 不做多会话汇总与自动批量\n  - 技术约束\n    - GUI 没有 Mermaid / markmap 渲染器 `结论`\n      所以图必须由生成的 HTML 自己画\n    - 会话日志是多帧追加的 zstd `结论`\n      只能走 ctx.sessionQuery，不能直接解压文件\n  - 关键决策 `决策`\n    每条都写了理由，方便后来的人理解\n    - 纯 Host 插件，零构建 ESM JS `决策`\n      克隆即可改、即可装，贡献者不需要构建链\n    - 必走 LLM，失败不静默降级 `决策`\n      长得像脑图的目录树比报错更误导\n    - 读模型表面而不是全量日志 `决策`\n      更贴近“这个会话到底聊了什么”\n  - 待办 `待办`\n    - 在真实会话上跑一遍并人工核对节点质量 `待办`\n    - 补一份英文 README 与 CI `待办`\n  - 未决问题 `未决问题`\n    - present 交付的 HTML 能否在 GUI 内预览 `未决问题`\n    - 长会话的分段合并质量是否稳定 `未决问题`\n","mermaid":"mindmap\n  root((会话脑图插件))\n    需求与边界\n      后置、人工触发，一个阶段生成一次\n      只交付 HTML，不做 GUI 面板\n      不做多会话汇总与自动批量\n    技术约束\n      GUI 没有 Mermaid / markmap 渲染器\n      会话日志是多帧追加的 zstd\n    关键决策\n      纯 Host 插件，零构建 ESM JS\n      必走 LLM，失败不静默降级\n      读模型表面而不是全量日志\n    待办\n      在真实会话上跑一遍并人工核对节点质量\n      补一份英文 README 与 CI\n    未决问题\n      present 交付的 HTML 能否在 GUI 内预览\n      长会话的分段合并质量是否稳定\n","shortLang":"zh","kindLabels":{"topic":"主题","conclusion":"结论","decision":"决策","todo":"待办","question":"未决问题","file":"涉及文件"},"fileBase":"demo","segments":[{"index":1,"turn":1,"firstSeq":1,"lastSeq":205},{"index":2,"turn":1,"firstSeq":209,"lastSeq":245},{"index":3,"turn":2,"firstSeq":254,"lastSeq":300},{"index":4,"turn":3,"firstSeq":309,"lastSeq":1009},{"index":5,"turn":4,"firstSeq":1020,"lastSeq":1199}]}</script>
 <script>
 (function () {
   'use strict';
@@ -131,6 +132,27 @@ footer{padding:6px 16px;color:var(--dim);font-size:11px;background:var(--chrome)
     var needle = search.toLowerCase();
     return node.label.toLowerCase().indexOf(needle) >= 0 ||
       (node.detail || '').toLowerCase().indexOf(needle) >= 0;
+  }
+
+  // Which part of the conversation a node came from. Showing "segment 3 ·
+  // seq 218-245" instead of a bare number is what makes a refs.seq auditable
+  // by hand in the transcript.
+  function locate(node) {
+    var seqs = (node.refs && node.refs.seq) || [];
+    if (seqs.length === 0) return '';
+    var segments = payload.segments || [];
+    for (var i = 0; i < segments.length; i++) {
+      var segment = segments[i];
+      for (var j = 0; j < seqs.length; j++) {
+        if (seqs[j] >= segment.firstSeq && seqs[j] <= segment.lastSeq) {
+          var where = payload.shortLang === 'en'
+            ? 'segment ' + segment.index
+            : '第 ' + segment.index + ' 段';
+          return where + ' · seq ' + segment.firstSeq + '-' + segment.lastSeq;
+        }
+      }
+    }
+    return 'seq ' + seqs.join(', ');
   }
   function hasMatch(node) {
     if (!search) return false;
@@ -223,7 +245,8 @@ footer{padding:6px 16px;color:var(--dim);font-size:11px;background:var(--chrome)
       group.addEventListener('mousemove', function (event) {
         var text = node.label;
         if (node.detail) text += '\n' + node.detail;
-        if (node.refs && node.refs.seq && node.refs.seq.length) text += '\n(seq ' + node.refs.seq.join(', ') + ')';
+        var located = locate(node);
+        if (located) text += '\n' + located;
         tip.textContent = text;
         tip.hidden = false;
         tip.style.left = Math.min(event.clientX + 14, window.innerWidth - 340) + 'px';
@@ -325,13 +348,38 @@ footer{padding:6px 16px;color:var(--dim);font-size:11px;background:var(--chrome)
     },
     fit: function () { fit(); },
     png: exportPng,
+    copy: function (button) {
+      var text = payload.markdown;
+      var done = function () {
+        if (!button) return;
+        var original = button.textContent;
+        button.textContent = payload.shortLang === 'en' ? 'copied' : '已复制';
+        setTimeout(function () { button.textContent = original; }, 1400);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done, function () { fallbackCopy(text, done); });
+        return;
+      }
+      fallbackCopy(text, done);
+    },
     md: function () { download(payload.fileBase + '.md', new Blob([payload.markdown], { type: 'text/markdown;charset=utf-8' })); },
     mmd: function () { download(payload.fileBase + '.mmd', new Blob([payload.mermaid], { type: 'text/plain;charset=utf-8' })); },
     theme: function () { theme = theme === 'dark' ? 'light' : 'dark'; document.documentElement.setAttribute('data-theme', theme); draw(); }
   };
+  function fallbackCopy(text, done) {
+    var area = document.createElement('textarea');
+    area.value = text;
+    area.setAttribute('readonly', '');
+    area.style.position = 'fixed';
+    area.style.opacity = '0';
+    document.body.appendChild(area);
+    area.select();
+    try { document.execCommand('copy'); done(); } catch (error) { /* clipboard unavailable */ }
+    area.remove();
+  }
   document.addEventListener('click', function (event) {
     var action = event.target && event.target.getAttribute && event.target.getAttribute('data-act');
-    if (action && actions[action]) actions[action]();
+    if (action && actions[action]) actions[action](event.target);
   });
   document.getElementById('search').addEventListener('input', function (event) {
     search = event.target.value.trim();

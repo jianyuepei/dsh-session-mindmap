@@ -6,10 +6,12 @@
  */
 
 import assert from "node:assert/strict";
+import { join } from "node:path";
 import { test } from "node:test";
 
 import {
   DEFAULT_CONFIG,
+  artifactDir,
   buildCommandDefinition,
   buildToolOptions,
   parseCommandInput,
@@ -32,18 +34,20 @@ const OK = {
 };
 
 test("parseCommandInput handles ids, flags and unknown tokens", () => {
-  assert.deepEqual(parseCommandInput(""), { sessionId: "", focus: "", kinds: "", force: false, open: false });
+  assert.deepEqual(parseCommandInput(""), { sessionId: "", focus: "", kinds: "", language: "", force: false, open: false });
   assert.deepEqual(parseCommandInput("last --open"), {
     sessionId: "last",
     focus: "",
     kinds: "",
+    language: "",
     force: false,
     open: true,
   });
-  const parsed = parseCommandInput("session-abc --focus=脑图 --kinds=topic,todo -f");
+  const parsed = parseCommandInput("session-abc --focus=脑图 --kinds=topic,todo --lang=en -f");
   assert.equal(parsed.sessionId, "session-abc");
   assert.equal(parsed.focus, "脑图");
   assert.equal(parsed.kinds, "topic,todo");
+  assert.equal(parsed.language, "en");
   assert.equal(parsed.force, true);
   assert.equal(parseCommandInput("--focus=a b").sessionId, "b", "a bare token after a flag is still the id");
 });
@@ -93,13 +97,31 @@ test("summarize reports both languages and the artifact path", () => {
   assert.match(summarize(OK, "zh"), /脑图已生成：测试脑图（7 个节点｜3 轮｜deepseek\/chat）/);
   assert.match(summarize(OK, "en"), /Mind map ready: 测试脑图 \(7 nodes \| 3 turns/);
   assert.match(summarize({ ...OK, cached: true }, "zh"), /缓存命中/);
+  assert.match(summarize(OK, "zh"), /文件：\/tmp\/x\.html/);
+});
+
+test("summarize turns a served artifact into a clickable link", () => {
+  const served = { ...OK, viewPath: "/session-mindmap/artifact?id=abc123" };
+  assert.match(summarize(served, "zh"), /▶ \[点击打开脑图\]\(\/session-mindmap\/artifact\?id=abc123\)/);
+  assert.match(summarize(served, "en"), /▶ \[Open the mind map\]\(\/session-mindmap\/artifact\?id=abc123\)/);
+  // The plain path stays, for terminals and logs.
+  assert.match(summarize(served, "zh"), /文件：\/tmp\/x\.html/);
+  // Without a served artifact there must be no link at all.
+  assert.doesNotMatch(summarize(OK, "zh"), /\]\(/);
+});
+
+test("artifactDir resolves the output directory the same way everywhere", () => {
+  assert.equal(artifactDir({}, "/work"), "/work/.dsh/mindmap");
+  assert.equal(artifactDir({ outputDir: "out" }, "/work"), "/work/out");
+  assert.equal(artifactDir({ outputDir: "/abs/out" }, "/work"), "/abs/out");
+  assert.equal(artifactDir({}, undefined), join(process.cwd(), ".dsh", "mindmap"));
 });
 
 test("the tool contract is complete and self-consistent", () => {
   const options = buildToolOptions({ config: DEFAULT_CONFIG, timeoutMs: 60000, run: async () => OK });
   assert.equal(options.name, "session_mindmap");
   assert.ok(options.description.length > 40);
-  assert.deepEqual(Object.keys(options.parameters).sort(), ["focus", "force", "kinds", "sessionId"]);
+  assert.deepEqual(Object.keys(options.parameters).sort(), ["focus", "force", "kinds", "language", "sessionId"]);
   assert.equal(options.parameters.sessionId.type, "string");
   assert.equal(options.parameters.force.type, "boolean");
   assert.equal(options.output.schema.type, "object");

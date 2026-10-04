@@ -44,6 +44,7 @@ session_mindmap
   sessionId?  "last" 或某个会话 id；省略即当前会话
   kinds?      逗号分隔：topic,conclusion,decision,todo,question,file
   focus?      只整理某一个主题
+  language?   zh 或 en；省略用插件配置
   force?      忽略缓存，重新调用模型
 ```
 
@@ -52,9 +53,10 @@ session_mindmap
 ```
 /mindmap                       # 当前会话
 /mindmap last                  # 最近一个会话
-/mindmap session-abc --open    # 指定会话，生成后打开
+/mindmap session-abc --open    # 指定会话，生成后直接在浏览器打开
 /mindmap --focus=发布方案       # 只整理一个主题
 /mindmap --kinds=topic,file    # 把涉及的文件也带上
+/mindmap --lang=en             # 单次产出英文脑图，不用改配置
 ```
 
 命令是推荐入口：不想为"请求本身"再花一轮模型时，它照样能跑。
@@ -67,9 +69,10 @@ session_mindmap
 └── .cache/<hash>.json                 # 脑图数据 + 导出文本，按会话状态缓存
 ```
 
-* **HTML 是自包含的**：没有 CDN、没有网络字体、没有图片、没有任何上报，脑图用内联 SVG 画，离线可用。
-* **交互**：点节点折叠/展开、拖拽平移、滚轮缩放、搜索高亮，工具栏可导出 PNG / Markdown / Mermaid。
-* **缓存**：key 由会话已捕获的事件序号、启用的维度、focus 和模型组成。会话没变时直接命中缓存，完全不调模型；`force: true`（或 `--force`）可强制重算。
+* **点击即达**：结果里给的是同源链接（`/session-mindmap/artifact?id=…`），点一下直接在浏览器打开，不用复制路径；文件路径仍单独一行给出，方便终端、日志和 headless 场景。链接是**进程级**的——生成它的那个 DSH 实例还在运行就有效，和 App 自身 token URL 的生命周期一致。
+* **HTML 是自包含的**：没有 CDN、没有网络字体、没有图片、没有任何上报，脑图用内联 SVG 画，离线可用，也能直接发给人或提交进仓库。
+* **交互**：点节点折叠/展开、拖拽平移、滚轮缩放、搜索高亮；悬停节点会告诉你它来自会话的哪一段（`第 3 段 · seq 218-245`）；工具栏可**复制大纲**、导出 PNG / Markdown / Mermaid。
+* **缓存**：key 由会话已捕获的事件序号、启用的维度、focus、语言和模型组成。会话没变时直接命中缓存，完全不调模型；`force: true`（或 `--force`）可强制重算。
 * **重新生成**会写一个新的带时间戳的文件，旧快照不会被覆盖。不想提交的话把 `.dsh/` 加进 `.gitignore`。
 
 ## 配置
@@ -88,7 +91,7 @@ session_mindmap
 | --- | --- | --- |
 | `provider` / `model` | 空 | 留空即跟随 Agent 默认模型；生成频繁的话可以指定一个便宜模型。 |
 | `kinds` | `topic, conclusion, decision, todo, question` | 抽取维度；加 `file` 会把会话涉及的**文件**也整理进去。 |
-| `language` | `zh` | 节点语言：`zh` 或 `en`。 |
+| `language` | `zh` | 节点语言：`zh` 或 `en`（工具参数 `language` 可单次覆盖）。 |
 | `maxInputTokens` | `24000` | 单次模型调用的 transcript 预算。 |
 | `maxBlocks` | `8` | 长会话最多分几段生成，另加一次合并调用。 |
 | `maxNodes` / `maxDepth` | `80` / `4` | 对模型返回结果做的节点数与层数上限。 |

@@ -99,6 +99,13 @@ const html = renderHtml({
     version: "0.1.0",
     fileBase: "demo",
     calls: 1,
+    segments: [
+      { index: 1, turn: 1, firstSeq: 1, lastSeq: 205 },
+      { index: 2, turn: 1, firstSeq: 209, lastSeq: 245 },
+      { index: 3, turn: 2, firstSeq: 254, lastSeq: 300 },
+      { index: 4, turn: 3, firstSeq: 309, lastSeq: 1009 },
+      { index: 5, turn: 4, firstSeq: 1020, lastSeq: 1199 },
+    ],
   },
 });
 

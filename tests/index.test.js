@@ -71,7 +71,7 @@ test("apply registers one tool and one command", { skip }, () => {
 
   // defineTool compiled the property map into a strict JSON Schema.
   assert.equal(tool.parameters.type, "object");
-  assert.deepEqual(Object.keys(tool.parameters.properties).sort(), ["focus", "force", "kinds", "sessionId"]);
+  assert.deepEqual(Object.keys(tool.parameters.properties).sort(), ["focus", "force", "kinds", "language", "sessionId"]);
   assert.equal(tool.parameters.properties.sessionId.type, "string");
   assert.equal(tool.parameters.properties.force.type, "boolean");
   assert.equal(tool.parameters.required, undefined, "every argument is optional");

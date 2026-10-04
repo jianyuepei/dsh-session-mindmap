@@ -53,6 +53,7 @@ session_mindmap
   sessionId?  "last" or a session id; defaults to the current session
   kinds?      CSV of topic,conclusion,decision,todo,question,file
   focus?      only summarise this topic
+  language?   zh or en; defaults to the plugin config
   force?      ignore the cache and call the model again
 ```
 
@@ -61,9 +62,10 @@ or use the command, which never involves the model in deciding anything:
 ```
 /mindmap                       # current session
 /mindmap last                  # most recent session
-/mindmap session-abc --open    # a specific session, then open the file
+/mindmap session-abc --open    # a specific session, then open it in the browser
 /mindmap --focus=发布方案       # only one topic
 /mindmap --kinds=topic,file    # include the files that were touched
+/mindmap --lang=en             # one English map, without touching the config
 ```
 
 The command is the intended entry point: it runs even when you do not want to
@@ -77,13 +79,22 @@ spend a model turn on the request itself.
 └── .cache/<hash>.json                 # map + exports, keyed by session state
 ```
 
+* **One click away.** The result carries a same-origin link
+  (`/session-mindmap/artifact?id=…`) instead of only a path, so the mind map
+  opens in the browser directly. The file path stays on its own line for
+  terminals, logs and headless runs. Links are process-scoped — they work while
+  the DSH instance that generated them is running, which is the same lifetime
+  the app's own token URLs have.
 * **The HTML is standalone.** No CDN, no web fonts, no images, no telemetry.
-  It draws the map with inline SVG and works offline.
-* **Interactions**: click a node to fold it, drag to pan, scroll to zoom, search
-  to highlight, and export to PNG / Markdown / Mermaid from the toolbar.
+  It draws the map with inline SVG, so the file still works offline and can be
+  attached to a chat or committed.
+* **Interactions**: fold nodes, drag to pan, scroll to zoom, search to
+  highlight, hover to see which part of the conversation a node came from
+  (`segment 3 · seq 218-245`), copy the outline, and export to PNG / Markdown /
+  Mermaid from the toolbar.
 * **Cache**: keyed by the session's captured event sequence, the enabled kinds,
-  the focus and the model. Re-running an unchanged session skips the model call
-  entirely; `force: true` (or `--force`) bypasses it.
+  the focus, the language and the model. Re-running an unchanged session skips
+  the model call entirely; `force: true` (or `--force`) bypasses it.
 * **Regenerating** writes a new timestamped file, so older snapshots stay put.
   Add `.dsh/` to `.gitignore` if you do not want them committed.
 
@@ -104,7 +115,7 @@ whole `config` object, so restate every key you want to keep:
 | --- | --- | --- |
 | `provider` / `model` | empty | Empty follows the agent's default model. Point these at a cheap model if you generate these often. |
 | `kinds` | `topic, conclusion, decision, todo, question` | Node kinds to extract. Add `file` to include the files a session touched. |
-| `language` | `zh` | Node language: `zh` or `en`. |
+| `language` | `zh` | Node language: `zh` or `en` (the `language` tool argument overrides it for one run). |
 | `maxInputTokens` | `24000` | Transcript budget for one model call. |
 | `maxBlocks` | `8` | Hard cap on map calls for a long session, plus one merge call. |
 | `maxNodes` / `maxDepth` | `80` / `4` | Clamps applied to whatever the model returns. |
