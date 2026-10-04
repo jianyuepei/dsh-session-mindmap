@@ -34,15 +34,18 @@ const OK = {
 };
 
 test("parseCommandInput handles ids, flags and unknown tokens", () => {
-  assert.deepEqual(parseCommandInput(""), { sessionId: "", focus: "", kinds: "", language: "", force: false, open: false });
-  assert.deepEqual(parseCommandInput("last --open"), {
-    sessionId: "last",
+  assert.deepEqual(parseCommandInput(""), {
+    sessionId: "",
     focus: "",
     kinds: "",
     language: "",
     force: false,
-    open: true,
+    openMode: "",
   });
+  assert.deepEqual(parseCommandInput("last --open").openMode, "open");
+  assert.equal(parseCommandInput("--reveal").openMode, "reveal");
+  assert.equal(parseCommandInput("--no-open").openMode, "none");
+  assert.equal(parseCommandInput("--open --no-open").openMode, "none", "the last flag wins");
   const parsed = parseCommandInput("session-abc --focus=脑图 --kinds=topic,todo --lang=en -f");
   assert.equal(parsed.sessionId, "session-abc");
   assert.equal(parsed.focus, "脑图");
@@ -108,6 +111,32 @@ test("summarize turns a served artifact into a clickable link", () => {
   assert.match(summarize(served, "zh"), /文件：\/tmp\/x\.html/);
   // Without a served artifact there must be no link at all.
   assert.doesNotMatch(summarize(OK, "zh"), /\]\(/);
+});
+
+test("summarize reports what the plugin already did, and the command drops the link", () => {
+  const base = { ...OK, htmlPath: "/tmp/x.html" };
+  assert.match(summarize({ ...base, opened: "open" }, "zh"), /已用默认浏览器打开/);
+  assert.match(summarize({ ...base, opened: "open" }, "en"), /Opened in the default browser/);
+  assert.match(summarize({ ...base, opened: "reveal" }, "zh"), /已在文件管理器中选中/);
+  assert.doesNotMatch(summarize({ ...base, opened: "none" }, "zh"), /已用默认浏览器/);
+
+  // The GUI's command row renders plain text, so a Markdown link there would be
+  // shown literally — it is only offered where text is rendered as Markdown.
+  const withLink = { ...base, viewPath: "/session-mindmap/artifact?id=abc" };
+  assert.doesNotMatch(summarize(withLink, "zh", { link: false }), /\]\(/);
+  assert.match(summarize(withLink, "zh", { link: true }), /点击打开脑图/);
+});
+
+test("the command result never contains a markdown link", async () => {
+  const definition = buildCommandDefinition({
+    config: DEFAULT_CONFIG,
+    run: async () => ({ ...OK, viewPath: "/session-mindmap/artifact?id=abc", opened: "open" }),
+  });
+  const result = await definition.handler({ rawInput: "", agent: { id: "s" }, signal: undefined });
+  assert.equal(result.kind, "success");
+  assert.doesNotMatch(result.text, /\]\(/);
+  assert.match(result.text, /已用默认浏览器打开/);
+  assert.match(result.text, /文件：\/tmp\/x\.html/);
 });
 
 test("artifactDir resolves the output directory the same way everywhere", () => {

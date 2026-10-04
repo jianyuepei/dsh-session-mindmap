@@ -62,7 +62,8 @@ or use the command, which never involves the model in deciding anything:
 ```
 /mindmap                       # current session
 /mindmap last                  # most recent session
-/mindmap session-abc --open    # a specific session, then open it in the browser
+/mindmap session-abc --reveal  # a specific session, then select it in the file manager
+/mindmap --no-open             # write the file quietly
 /mindmap --focus=发布方案       # only one topic
 /mindmap --kinds=topic,file    # include the files that were touched
 /mindmap --lang=en             # one English map, without touching the config
@@ -123,7 +124,7 @@ whole `config` object, so restate every key you want to keep:
 | `llmTimeoutMs` | `180000` | Per-call timeout. |
 | `outputDir` | `.dsh/mindmap` | Relative to the session workspace; absolute paths are accepted. |
 | `cache` | `true` | Reuse the last result while the session has not grown. |
-| `openAfterBuild` | `false` | Open the artifact in the system browser. |
+| `openAfterBuild` | `true` | Open the artifact after a human runs `/mindmap`. Ignored for model-invoked calls, which leave a deliverable card instead. |
 
 ## How it works
 

@@ -25,6 +25,7 @@ const skip = plugin ? false : "@deepseek-ai/dsh-tools is not installed — provi
 function fakeHost() {
   const tools = [];
   const commands = [];
+  const listeners = [];
   const ctx = {
     tools: {
       register(definition) {
@@ -46,8 +47,12 @@ function fakeHost() {
       return () => {};
     },
     get: () => undefined,
+    on(name, listener) {
+      listeners.push({ name, listener });
+      return () => {};
+    },
   };
-  return { ctx, tools, commands };
+  return { ctx, tools, commands, listeners };
 }
 
 test("the module exports the Cordis contract", { skip }, () => {

@@ -53,7 +53,8 @@ session_mindmap
 ```
 /mindmap                       # 当前会话
 /mindmap last                  # 最近一个会话
-/mindmap session-abc --open    # 指定会话，生成后直接在浏览器打开
+/mindmap session-abc --reveal  # 指定会话，生成后在文件管理器里选中它
+/mindmap --no-open             # 只写文件，不打开任何窗口
 /mindmap --focus=发布方案       # 只整理一个主题
 /mindmap --kinds=topic,file    # 把涉及的文件也带上
 /mindmap --lang=en             # 单次产出英文脑图，不用改配置
@@ -99,7 +100,7 @@ session_mindmap
 | `llmTimeoutMs` | `180000` | 单次调用超时。 |
 | `outputDir` | `.dsh/mindmap` | 相对会话工作目录；也接受绝对路径。 |
 | `cache` | `true` | 会话没变时复用上次结果。 |
-| `openAfterBuild` | `false` | 生成后用系统浏览器打开。 |
+| `openAfterBuild` | `true` | 人手动执行 `/mindmap` 后自动打开产物；模型调用不受影响（它留一张交付物卡片）。 |
 
 ## 实现要点
 

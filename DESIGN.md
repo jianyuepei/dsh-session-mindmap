@@ -65,6 +65,19 @@ M1 已完成，代码与本文件同目录，`node --test` **77 个用例**全�
 
 同时 README 两侧各加了「故障排查」一节（保持章节数对齐，CI 的 parity 检查盯着）。
 
+### 0.4 「点击即达」第二次返工：命令结果是纯文本，链接渲染不出来（已修）
+
+用户重启后跑 `/mindmap`，图出来了，但结果里那行 `▶ [点击打开脑图](/session-mindmap/artifact?id=…)` **原样显示成了 Markdown 源码**——**GUI 的命令行结果渲染的是纯文本，不解析 Markdown**。所以"给个链接"这条路在命令入口上根本不成立。
+
+查了 DSH 原生的交付机制后改走两条路（`lib/deliver.js`）：
+
+| 入口 | 做法 | 依据 |
+|---|---|---|
+| `/mindmap`（人打的） | **直接打开产物**，没有东西要点：默认用系统默认应用打开，`--reveal` 改成在文件管理器里选中，`--no-open` 只写文件 | 人既然敲了命令，就是想看图 |
+| 工具 `session_mindmap`（模型调的） | **不弹窗**，改为在 `tools/result` 之后 `session.append("deliverables/presented", {turn, callId, files})`，让 DSH 自己渲染那张带「打开／在文件管理器中显示」动作的交付物卡片 | 照抄官方 `present` 工具的写法：它用 `ctx.sessionProjections.stateOf(session, "turnBoundary")` 拿当前轮次，在结果提交后追加事件 |
+
+文字结果也按渲染能力分开：命令结果用纯文本报告"已经做了什么"（`已用默认浏览器打开`），工具结果才带 Markdown 链接——同一个 `summarize()` 用 `{ link }` 控制。
+
 **路由形态踩了两次坑，都写进了 `lib/serve.js` 的注释**：① `/api/*` 是 Connection RPC 通道的地盘，插件的路由收不到请求（实测返回的是 SPA 的 404）；② `prefix` 路由同样不生效。最终用生态里其他插件验证过的 **exact 路由 + 查询参数**。信任判断也不再依赖"缺 `requestRejection` 就跳过"——那个守卫会静默把功能关掉（第一次探针验证就是被它坑的），改成显式的 loopback + 同源检查，`requestRejection` 只在报 403 时一票否决。
 
 
