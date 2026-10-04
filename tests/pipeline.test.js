@@ -395,3 +395,58 @@ test("an oversized session is split into several calls and merged", async () => 
   assert.equal(result.cached, false);
   assert.match(result.outline, /根/);
 });
+
+test("a second, longer run reports what the phase added", async () => {
+  const workspace = await makeWorkspace();
+  const first = fakeContext({ workspace, captured: 7 });
+  const firstRun = await runMindMap(first.ctx, {}, { sessionId: "session-test" });
+  assert.equal(firstRun.delta, "", "the first run has nothing to compare against");
+  assert.equal(firstRun.addedCount, 0);
+
+  // The session grew, and the model now also mentions a new topic.
+  const grown = fakeContext({
+    workspace,
+    captured: 9,
+    answer: () =>
+      JSON.stringify({
+        title: "端到端测试会话",
+        root: {
+          label: "核心主题",
+          kind: "topic",
+          children: [
+            { label: "关键结论", kind: "conclusion" },
+            { label: "新增的话题", kind: "decision" },
+          ],
+        },
+      }),
+  });
+  const second = await runMindMap(grown.ctx, {}, { sessionId: "session-test" });
+
+  assert.equal(second.addedCount, 1);
+  assert.equal(second.removedCount, 2, "the first map had two topics the second one dropped");
+  assert.match(second.delta, /与上一次相比/);
+  assert.match(second.delta, /新增 1 个话题：新增的话题/);
+
+  const html = await readFile(second.htmlPath, "utf8");
+  const payload = payloadOf(html);
+  assert.deepEqual(payload.delta.added, ["新增的话题"]);
+  assert.deepEqual(payload.delta.removed, ["被引用的文件", "下一步"]);
+  assert.equal(payload.delta.previousTotal, 4);
+  assert.match(html, /较上次：/);
+  assert.match(html, /id="deltaPanel"/);
+
+  // The index remembers both generations, newest first.
+  const history = JSON.parse(await readFile(join(workspace, ".dsh", "mindmap", ".cache", "index.json"), "utf8"));
+  assert.equal(history.entries.length, 2);
+  assert.deepEqual(history.entries.map((row) => row.capturedThroughSeq), [9, 7]);
+});
+
+test("the first run still writes an index entry for the next run to find", async () => {
+  const workspace = await makeWorkspace();
+  const { ctx } = fakeContext({ workspace });
+  await runMindMap(ctx, {}, { sessionId: "session-test" });
+  const history = JSON.parse(await readFile(join(workspace, ".dsh", "mindmap", ".cache", "index.json"), "utf8"));
+  assert.equal(history.entries.length, 1);
+  assert.equal(history.entries[0].sessionId, "session-test");
+  assert.equal(history.entries[0].capturedThroughSeq, 7);
+});

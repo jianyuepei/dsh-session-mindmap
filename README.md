@@ -67,6 +67,7 @@ or use the command, which never involves the model in deciding anything:
 /mindmap --focus=发布方案       # only one topic
 /mindmap --kinds=topic,file    # include the files that were touched
 /mindmap --lang=en             # one English map, without touching the config
+/mindmap list                  # recent sessions with their ids and titles
 ```
 
 The command is the intended entry point: it runs even when you do not want to
@@ -89,6 +90,12 @@ spend a model turn on the request itself.
 * **The HTML is standalone.** No CDN, no web fonts, no images, no telemetry.
   It draws the map with inline SVG, so the file still works offline and can be
   attached to a chat or committed.
+* **What changed since last time.** Generating a map for a session that already
+  has one reports the delta — `13 → 18 nodes · +6 · -1` — lists the added and
+  dropped topics, marks the new nodes in the artifact, and puts the same line in
+  the result. It is a structural diff of two node trees: no model call, no cost,
+  and the same input always gives the same answer. The bookkeeping lives in
+  `.cache/index.json`.
 * **Interactions**: fold nodes, drag to pan, scroll to zoom, search to
   highlight, hover to see which part of the conversation a node came from
   (`segment 3 · seq 218-245`), copy the outline, and export to PNG / Markdown /

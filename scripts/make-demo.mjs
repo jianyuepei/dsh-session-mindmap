@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 
 import { renderHtml } from "../lib/render-html.js";
 import { toMarkdown, toMermaid } from "../lib/render-md.js";
+import { diffMaps } from "../lib/diff.js";
 import { normalizeMindMap } from "../lib/schema.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -85,6 +86,17 @@ const markdown = toMarkdown(map, {
   language: "zh",
 });
 const mermaid = toMermaid(map);
+
+// A previous generation, so the demo also shows the delta panel. Derived from
+// the same tree, so the difference reads like a real phase summary.
+const previousRaw = structuredClone(RAW);
+previousRaw.title = "DSH 会话脑图插件设计（早期）";
+previousRaw.root.children = previousRaw.root.children.filter(
+  (node) => node.label !== "待办" && node.label !== "未决问题",
+);
+previousRaw.root.children.push({ label: "待确认：是否发布到 npm", kind: "question" });
+const previous = normalizeMindMap(previousRaw, { maxNodes: 80, maxDepth: 4 });
+
 const html = renderHtml({
   map,
   markdown,
@@ -96,9 +108,13 @@ const html = renderHtml({
     generatedAt,
     turnCount: 18,
     language: "zh",
-    version: "0.1.0",
+    version: "0.2.0",
     fileBase: "demo",
     calls: 1,
+    delta: {
+      ...diffMaps(previous, map),
+      previous: { title: previous.title, generatedAt: generatedAt - 86400000, nodeCount: 13 },
+    },
     segments: [
       { index: 1, turn: 1, firstSeq: 1, lastSeq: 205 },
       { index: 2, turn: 1, firstSeq: 209, lastSeq: 245 },

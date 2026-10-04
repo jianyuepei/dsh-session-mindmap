@@ -7,6 +7,11 @@ import { toMarkdown, toMermaid, toOutline } from "../lib/render-md.js";
 import { renderHtml } from "../lib/render-html.js";
 import { normalizeMindMap } from "../lib/schema.js";
 
+/** Parse the payload back out of a rendered artifact. */
+function payload(html) {
+  return JSON.parse(html.match(/id="dsh-mindmap-data">([\s\S]*?)<\/script>/)[1]);
+}
+
 function sampleMap(label = "会话脑图") {
   return normalizeMindMap(
     {
@@ -107,4 +112,49 @@ test("renderHtml honours the language switch", () => {
   });
   assert.match(html, /<html lang="en"/);
   assert.match(html, /Search nodes/);
+});
+
+test("the artifact carries a delta only when there is a previous run", () => {
+  const map = sampleMap();
+  // The panel markup is static; what decides whether it shows is the payload,
+  // which the embedded script reads.
+  const withoutDelta = renderHtml({
+    map,
+    markdown: "md",
+    mermaid: "mmd",
+    meta: { language: "zh", version: "0.2.0", fileBase: "x" },
+  });
+  assert.equal(payload(withoutDelta).delta, null);
+
+  const withDelta = renderHtml({
+    map,
+    markdown: "md",
+    mermaid: "mmd",
+    meta: {
+      language: "zh",
+      version: "0.2.0",
+      fileBase: "x",
+      delta: {
+        added: [{ label: "结论 A", kind: "conclusion" }],
+        removed: [{ label: "旧话题", kind: "topic" }],
+        moved: [{ label: "结论 A", from: 1, to: 2 }],
+        retitled: [],
+        kept: 3,
+        previousTotal: 5,
+        currentTotal: 4,
+        hasChanges: true,
+        previous: { title: "上一次", generatedAt: Date.UTC(2026, 9, 4, 1, 0, 0) },
+      },
+    },
+  });
+  assert.match(withDelta, /id="deltaPanel"/);
+  assert.match(withDelta, /data-act="delta"/);
+  const delta = payload(withDelta).delta;
+  assert.notEqual(delta, null);
+  assert.deepEqual(delta.added, ["结论 A"]);
+  assert.deepEqual(delta.removed, ["旧话题"]);
+  assert.equal(delta.movedCount, 1);
+  assert.equal(delta.previousTotal, 5);
+  assert.equal(delta.currentTotal, 4);
+  assert.equal(delta.previousTitle, "上一次");
 });

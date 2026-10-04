@@ -1,6 +1,6 @@
 {
   "name": "dsh-session-mindmap",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "DSH plugin: turn a session into a self-contained interactive HTML mind map.",
   "type": "module",
   "main": "lib/index.js",
@@ -12,6 +12,7 @@
     "lib",
     "cordis.patch.yml",
     "examples",
+    "CHANGELOG.md",
     "README.md",
     "README.zh-CN.md",
     "LICENSE"

@@ -18,6 +18,8 @@ import {
   resolveConfig,
   resolveKinds,
   resolveModel,
+  formatTimestamp,
+  listRecentSessions,
   resolveSessionId,
   stamp,
   summarize,
@@ -41,7 +43,11 @@ test("parseCommandInput handles ids, flags and unknown tokens", () => {
     language: "",
     force: false,
     openMode: "",
+    list: false,
   });
+  assert.equal(parseCommandInput("list").list, true);
+  assert.equal(parseCommandInput("list").sessionId, "");
+  assert.equal(parseCommandInput("session-abc").list, false);
   assert.deepEqual(parseCommandInput("last --open").openMode, "open");
   assert.equal(parseCommandInput("--reveal").openMode, "reveal");
   assert.equal(parseCommandInput("--no-open").openMode, "none");
@@ -201,4 +207,72 @@ test("the command contract returns success and error results", async () => {
   const bad = await failing.handler({ rawInput: "", agent: { id: "a" } });
   assert.equal(bad.kind, "error");
   assert.match(bad.text, /session-mindmap: 模型调用失败/);
+});
+
+test("formatTimestamp renders local time and refuses junk", () => {
+  assert.equal(formatTimestamp(new Date(2026, 9, 4, 23, 43).getTime()), "2026-10-04 23:43");
+  assert.equal(formatTimestamp(undefined), "");
+  assert.equal(formatTimestamp(0), "");
+  assert.equal(formatTimestamp("later"), "");
+});
+
+test("listRecentSessions names ids and titles, and survives a title failure", async () => {
+  const sessionQuery = {
+    async listSessions() {
+      return [
+        { header: { id: "session-a", createdAt: new Date(2026, 9, 4, 23, 43).getTime() }, live: true },
+        { header: { id: "session-b", createdAt: new Date(2026, 9, 3, 9, 5).getTime() }, live: false },
+      ];
+    },
+    async readTitleSnapshots(ids) {
+      assert.deepEqual(ids, ["session-a", "session-b"]);
+      return [
+        { sessionId: "session-a", status: "fulfilled", value: { title: { title: "插件开发" } } },
+        { sessionId: "session-b", status: "rejected", reason: new Error("gone") },
+      ];
+    },
+  };
+
+  const zh = await listRecentSessions(sessionQuery, { limit: 10, language: "zh" });
+  assert.match(zh, /最近 2 个会话（用 \/mindmap <id> 生成脑图）：/);
+  assert.match(zh, /1\. session-a {2}2026-10-04 23:43 · 进行中 {2}插件开发/);
+  assert.match(zh, /2\. session-b {2}2026-10-03 09:05 {2}（无标题）/);
+
+  const en = await listRecentSessions(sessionQuery, { limit: 1, language: "en" });
+  assert.match(en, /Latest 1 sessions/);
+  assert.doesNotMatch(en, /session-b/, "the limit is honoured");
+});
+
+test("listRecentSessions degrades when the host cannot list or answer", async () => {
+  await assert.rejects(() => listRecentSessions(undefined), /sessionQuery 服务不可用/);
+  const empty = await listRecentSessions({ listSessions: async () => [] });
+  assert.equal(empty, "没有任何会话。");
+
+  const noTitles = await listRecentSessions({
+    listSessions: async () => [{ header: { id: "s", createdAt: 1 } }],
+    readTitleSnapshots: async () => {
+      throw new Error("not supported");
+    },
+  });
+  assert.match(noTitles, /（无标题）/);
+});
+
+test("the list subcommand answers without touching the model", async () => {
+  let ran = false;
+  const definition = buildCommandDefinition({
+    config: DEFAULT_CONFIG,
+    run: async () => {
+      ran = true;
+      return OK;
+    },
+    list: async () => "01. session-a  2026-10-04 23:43  插件开发",
+  });
+  const result = await definition.handler({ rawInput: "list", agent: { id: "s" } });
+  assert.equal(result.kind, "success");
+  assert.match(result.text, /session-a/);
+  assert.equal(ran, false, "list must not generate anything");
+
+  const unsupported = buildCommandDefinition({ config: DEFAULT_CONFIG, run: async () => OK });
+  const bad = await unsupported.handler({ rawInput: "list", agent: { id: "s" } });
+  assert.equal(bad.kind, "error");
 });
