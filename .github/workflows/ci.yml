@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['20.x', '22.x']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      # The DSH packages arrive as peers of @deepseek-ai/dsh-tools, so the
+      # wiring contract test runs for real here; it skips cleanly if they are
+      # unreachable instead of turning the build red.
+      - name: Install
+        run: npm install --no-audit --no-fund
+
+      - name: Test
+        run: npm test
+
+      # The demo is documentation: if it no longer matches the renderer, the
+      # committed examples are lying to reviewers.
+      - name: Check the committed demo is current
+        run: |
+          npm run demo
+          git diff --exit-code examples/demo.html examples/demo.md examples/demo.mmd
+
+  manifest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+
+      # A bundle without a patch layer installs but never mounts.
+      - name: Bundle manifest sanity
+        run: |
+          node -e '
+            const fs = require("node:fs");
+            const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
+            const fail = (message) => { console.error(message); process.exit(1); };
+            if (!pkg.dsh?.bundle?.patch) fail("package.json: dsh.bundle.patch is required");
+            if (pkg.dsh.profile) fail("a bundle must not also declare dsh.profile");
+            if (!fs.existsSync(pkg.dsh.bundle.patch)) fail(`dsh.bundle.patch does not exist: ${pkg.dsh.bundle.patch}`);
+            const row = fs.readFileSync(pkg.dsh.bundle.patch, "utf8");
+            if (!row.includes(pkg.name)) fail(`${pkg.dsh.bundle.patch} does not reference ${pkg.name}`);
+            for (const entry of [pkg.main, ...Object.values(pkg.exports ?? {})]) {
+              const target = typeof entry === "string" ? entry : entry.default;
+              if (!fs.existsSync(target)) fail(`entry point is missing: ${target}`);
+            }
+            for (const required of ["lib", "cordis.patch.yml"]) {
+              if (!(pkg.files ?? []).includes(required)) fail(`package.json: files must ship ${required}`);
+            }
+            console.log("manifest ok:", pkg.name, pkg.version);
+          '

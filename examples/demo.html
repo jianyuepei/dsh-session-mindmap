@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generator" content="dsh-session-mindmap 0.1.0">
+<title>DSH 会话脑图插件设计</title>
+<style>
+:root{--bg:#0f1115;--chrome:#12151b;--line:#232936;--text:#eef1f5;--dim:#8b95a3;--control:#1b212b}
+:root[data-theme="light"]{--bg:#ffffff;--chrome:#f6f7f9;--line:#e3e6ea;--text:#151a21;--dim:#5b6673;--control:#ffffff}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--text);font:14px -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;display:flex;flex-direction:column}
+header{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;padding:10px 16px;background:var(--chrome);border-bottom:1px solid var(--line)}
+h1{margin:0;font-size:15px;font-weight:600;max-width:52vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.meta{color:var(--dim);font-size:12px}
+.tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+button,input{font:inherit;font-size:12px;color:var(--text);background:var(--control);border:1px solid var(--line);border-radius:8px;padding:5px 10px;cursor:pointer}
+button:hover{border-color:#4c8dff}
+input{width:180px;cursor:text}
+#legend{display:flex;gap:12px;flex-wrap:wrap;padding:6px 16px;color:var(--dim);font-size:12px;background:var(--chrome);border-bottom:1px solid var(--line)}
+.chip{display:inline-flex;align-items:center;gap:5px}
+.chip i{width:9px;height:9px;border-radius:50%;display:inline-block}
+#stage{flex:1;position:relative;overflow:hidden;cursor:grab}
+#stage:active{cursor:grabbing}
+#canvas{width:100%;height:100%;display:block}
+#tip{position:fixed;max-width:320px;padding:7px 10px;background:var(--chrome);border:1px solid var(--line);border-radius:8px;font-size:12px;line-height:1.5;color:var(--text);white-space:pre-wrap;pointer-events:none;z-index:9;box-shadow:0 8px 24px rgba(0,0,0,.35)}
+footer{padding:6px 16px;color:var(--dim);font-size:11px;background:var(--chrome);border-top:1px solid var(--line)}
+</style>
+</head>
+<body>
+<header>
+  <h1 title="DSH 会话脑图插件设计">DSH 会话脑图插件设计</h1>
+  <span class="meta">session session-demo · 18 轮 · model deepseek/chat · 1 次模型调用 · 2026-10-04 02:00</span>
+  <span class="tools">
+    <input id="search" type="search" placeholder="搜索节点…" aria-label="search">
+    <button data-act="expand">全部展开</button>
+    <button data-act="collapse">折叠</button>
+    <button data-act="fit">适应窗口</button>
+    <button data-act="png">PNG</button>
+    <button data-act="md">Markdown</button>
+    <button data-act="mmd">Mermaid</button>
+    <button data-act="theme">主题</button>
+  </span>
+</header>
+<div id="legend"></div>
+<main id="stage"><svg id="canvas" xmlns="http://www.w3.org/2000/svg"><g id="world"></g></svg></main>
+<div id="tip" hidden></div>
+<footer>点击节点折叠/展开 · 拖拽平移 · 滚轮缩放 · 由 dsh-session-mindmap 生成</footer>
+<script type="application/json" id="dsh-mindmap-data">{"map":{"title":"DSH 会话脑图插件设计","root":{"id":"n1","label":"会话脑图插件","kind":"topic","detail":"把会话核心内容整理成可离线打开的 HTML 脑图","refs":{"seq":[]},"children":[{"id":"n2","label":"需求与边界","kind":"topic","refs":{"seq":[]},"children":[{"id":"n3","label":"后置、人工触发，一个阶段生成一次","kind":"topic","refs":{"seq":[]},"children":[]},{"id":"n4","label":"只交付 HTML，不做 GUI 面板","kind":"topic","refs":{"seq":[]},"children":[]},{"id":"n5","label":"不做多会话汇总与自动批量","kind":"topic","refs":{"seq":[]},"children":[]}]},{"id":"n6","label":"技术约束","kind":"topic","refs":{"seq":[]},"children":[{"id":"n7","label":"GUI 没有 Mermaid / markmap 渲染器","kind":"conclusion","detail":"所以图必须由生成的 HTML 自己画","refs":{"seq":[]},"children":[]},{"id":"n8","label":"会话日志是多帧追加的 zstd","kind":"conclusion","detail":"只能走 ctx.sessionQuery，不能直接解压文件","refs":{"seq":[]},"children":[]}]},{"id":"n9","label":"关键决策","kind":"decision","detail":"每条都写了理由，方便后来的人理解","refs":{"seq":[]},"children":[{"id":"n10","label":"纯 Host 插件，零构建 ESM JS","kind":"decision","detail":"克隆即可改、即可装，贡献者不需要构建链","refs":{"seq":[]},"children":[]},{"id":"n11","label":"必走 LLM，失败不静默降级","kind":"decision","detail":"长得像脑图的目录树比报错更误导","refs":{"seq":[]},"children":[]},{"id":"n12","label":"读模型表面而不是全量日志","kind":"decision","detail":"更贴近“这个会话到底聊了什么”","refs":{"seq":[]},"children":[]}]},{"id":"n13","label":"待办","kind":"todo","refs":{"seq":[]},"children":[{"id":"n14","label":"在真实会话上跑一遍并人工核对节点质量","kind":"todo","refs":{"seq":[]},"children":[]},{"id":"n15","label":"补一份英文 README 与 CI","kind":"todo","refs":{"seq":[]},"children":[]}]},{"id":"n16","label":"未决问题","kind":"question","refs":{"seq":[]},"children":[{"id":"n17","label":"present 交付的 HTML 能否在 GUI 内预览","kind":"question","refs":{"seq":[]},"children":[]},{"id":"n18","label":"长会话的分段合并质量是否稳定","kind":"question","refs":{"seq":[]},"children":[]}]}]},"nodeCount":18,"truncated":false},"markdown":"# DSH 会话脑图插件设计\n\n> session `session-demo` · 18 轮 · model `deepseek/chat` · 2026-10-04 02:00\n- 会话脑图插件\n  - 需求与边界\n    - 后置、人工触发，一个阶段生成一次\n    - 只交付 HTML，不做 GUI 面板\n    - 不做多会话汇总与自动批量\n  - 技术约束\n    - GUI 没有 Mermaid / markmap 渲染器 `结论`\n      所以图必须由生成的 HTML 自己画\n    - 会话日志是多帧追加的 zstd `结论`\n      只能走 ctx.sessionQuery，不能直接解压文件\n  - 关键决策 `决策`\n    每条都写了理由，方便后来的人理解\n    - 纯 Host 插件，零构建 ESM JS `决策`\n      克隆即可改、即可装，贡献者不需要构建链\n    - 必走 LLM，失败不静默降级 `决策`\n      长得像脑图的目录树比报错更误导\n    - 读模型表面而不是全量日志 `决策`\n      更贴近“这个会话到底聊了什么”\n  - 待办 `待办`\n    - 在真实会话上跑一遍并人工核对节点质量 `待办`\n    - 补一份英文 README 与 CI `待办`\n  - 未决问题 `未决问题`\n    - present 交付的 HTML 能否在 GUI 内预览 `未决问题`\n    - 长会话的分段合并质量是否稳定 `未决问题`\n","mermaid":"mindmap\n  root((会话脑图插件))\n    需求与边界\n      后置、人工触发，一个阶段生成一次\n      只交付 HTML，不做 GUI 面板\n      不做多会话汇总与自动批量\n    技术约束\n      GUI 没有 Mermaid / markmap 渲染器\n      会话日志是多帧追加的 zstd\n    关键决策\n      纯 Host 插件，零构建 ESM JS\n      必走 LLM，失败不静默降级\n      读模型表面而不是全量日志\n    待办\n      在真实会话上跑一遍并人工核对节点质量\n      补一份英文 README 与 CI\n    未决问题\n      present 交付的 HTML 能否在 GUI 内预览\n      长会话的分段合并质量是否稳定\n","shortLang":"zh","kindLabels":{"topic":"主题","conclusion":"结论","decision":"决策","todo":"待办","question":"未决问题","file":"涉及文件"},"fileBase":"demo"}</script>
+<script>
+(function () {
+  'use strict';
+  var payload = JSON.parse(document.getElementById('dsh-mindmap-data').textContent);
+  var map = payload.map;
+  var KIND_COLORS = {
+    topic: '#4c8dff', conclusion: '#35c46a', decision: '#f0a02c',
+    todo: '#a06bff', question: '#f05a5a', file: '#7b8794'
+  };
+  var THEMES = {
+    dark: { bg: '#0f1115', nodeText: '#eef1f5', dim: '#8b95a3', link: '#39414f', chrome: '#12151b' },
+    light: { bg: '#ffffff', nodeText: '#151a21', dim: '#5b6673', link: '#c3cad4', chrome: '#f6f7f9' }
+  };
+  var FONT_FAMILY = '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif';
+  var FONT = '13px ' + FONT_FAMILY;
+  var ROOT_FONT = 'bold 15px ' + FONT_FAMILY;
+  var NODE_H = 34, V_GAP = 16, COL_GAP = 64, PAD_X = 14, MIN_W = 96, MAX_W = 320, INDICATOR = 18;
+
+  var svg = document.getElementById('canvas');
+  var world = document.getElementById('world');
+  var stage = document.getElementById('stage');
+  var tip = document.getElementById('tip');
+  var NS = 'http://www.w3.org/2000/svg';
+  var measure = document.createElement('canvas').getContext('2d');
+  measure.font = FONT;
+
+  var collapsed = {};
+  var view = { k: 1, x: 48, y: 48 };
+  var search = '';
+  var theme = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+  var contentSize = { w: 0, h: 0 };
+
+  function el(tag, attrs) {
+    var node = document.createElementNS(NS, tag);
+    if (attrs) { for (var key in attrs) { if (attrs[key] !== undefined && attrs[key] !== null) node.setAttribute(key, attrs[key]); } }
+    return node;
+  }
+  function textWidth(text, font) { measure.font = font || FONT; return measure.measureText(text).width; }
+  function fitLabel(label, width) {
+    if (textWidth(label) <= width) return label;
+    var cut = label;
+    while (cut.length > 1 && textWidth(cut + '\u2026') > width) cut = cut.slice(0, -1);
+    return cut + '\u2026';
+  }
+  function nodeWidth(node) {
+    var font = node === map.root ? ROOT_FONT : FONT;
+    var w = textWidth(node.label, font) + PAD_X * 2;
+    if (node.children && node.children.length > 0) w += INDICATOR;
+    return Math.max(MIN_W, Math.min(MAX_W, Math.ceil(w)));
+  }
+  function visibleChildren(node) { return collapsed[node.id] ? [] : (node.children || []); }
+
+  function layout() {
+    var columnWidth = [];
+    (function scan(node, depth) {
+      columnWidth[depth] = Math.max(columnWidth[depth] || 0, nodeWidth(node));
+      var kids = visibleChildren(node);
+      for (var i = 0; i < kids.length; i++) scan(kids[i], depth + 1);
+    })(map.root, 0);
+
+    var columnX = [];
+    var acc = 0;
+    for (var d = 0; d < columnWidth.length; d++) { columnX[d] = acc; acc += columnWidth[d] + COL_GAP; }
+    contentSize.w = acc > 0 ? acc - COL_GAP : 0;
+
+    var cursor = 0;
+    (function assign(node, depth) {
+      node.__x = columnX[depth];
+      node.__w = columnWidth[depth];
+      node.__depth = depth;
+      var kids = visibleChildren(node);
+      if (kids.length === 0) { node.__y = cursor; cursor += NODE_H + V_GAP; return; }
+      for (var i = 0; i < kids.length; i++) assign(kids[i], depth + 1);
+      node.__y = (kids[0].__y + kids[kids.length - 1].__y) / 2;
+    })(map.root, 0);
+    contentSize.h = Math.max(0, cursor - V_GAP);
+  }
+
+  function matches(node) {
+    if (!search) return false;
+    var needle = search.toLowerCase();
+    return node.label.toLowerCase().indexOf(needle) >= 0 ||
+      (node.detail || '').toLowerCase().indexOf(needle) >= 0;
+  }
+  function hasMatch(node) {
+    if (!search) return false;
+    if (matches(node)) return true;
+    var kids = visibleChildren(node);
+    for (var i = 0; i < kids.length; i++) if (hasMatch(kids[i])) return true;
+    return false;
+  }
+  function expandToMatches(node) {
+    if (!search) return;
+    var kids = node.children || [];
+    var hit = false;
+    for (var i = 0; i < kids.length; i++) { if (hasMatch(kids[i])) { hit = true; delete collapsed[node.id]; expandToMatches(kids[i]); } }
+    return hit;
+  }
+
+  function draw() {
+    var palette = THEMES[theme];
+    while (world.firstChild) world.removeChild(world.firstChild);
+    var backgrounds = el('rect', { x: 0, y: 0, width: contentSize.w, height: contentSize.h + 40, fill: palette.bg });
+    world.appendChild(backgrounds);
+
+    var links = el('g', { fill: 'none', stroke: palette.link, 'stroke-width': 1.6 });
+    var nodes = el('g');
+    world.appendChild(links);
+    world.appendChild(nodes);
+
+    (function walk(node) {
+      var kids = visibleChildren(node);
+      var cy = node.__y + NODE_H / 2;
+      var startX = node.__x + node.__w + (node.children && node.children.length > 0 ? INDICATOR + 2 : 0);
+      for (var i = 0; i < kids.length; i++) {
+        var child = kids[i];
+        var ccy = child.__y + NODE_H / 2;
+        var mid = (startX + child.__x) / 2;
+        links.appendChild(el('path', {
+          d: 'M' + startX + ',' + cy + ' C' + mid + ',' + cy + ' ' + mid + ',' + ccy + ' ' + child.__x + ',' + ccy,
+          'stroke-linecap': 'round'
+        }));
+        walk(child);
+      }
+    })(map.root);
+
+    var dimmed = Boolean(search);
+    (function walk(node) {
+      var color = KIND_COLORS[node.kind] || KIND_COLORS.topic;
+      var hit = matches(node);
+      var inPath = !dimmed || hit || hasMatch(node);
+      var group = el('g', { opacity: inPath ? '1' : '0.28', style: 'cursor:pointer' });
+      var isRoot = node === map.root;
+      group.appendChild(el('rect', {
+        x: node.__x, y: node.__y, width: node.__w, height: NODE_H, rx: 9,
+        fill: color, 'fill-opacity': isRoot ? '0.3' : '0.16',
+        stroke: color, 'stroke-width': hit ? 3 : (isRoot ? 2 : 1.4)
+      }));
+      if (hit) {
+        group.appendChild(el('rect', {
+          x: node.__x - 4, y: node.__y - 4, width: node.__w + 8, height: NODE_H + 8, rx: 12,
+          fill: 'none', stroke: color, 'stroke-width': 1, 'stroke-dasharray': '4 3', opacity: '0.8'
+        }));
+      }
+      var label = el('text', {
+        x: node.__x + PAD_X, y: node.__y + NODE_H / 2 + 1,
+        fill: THEMES[theme].nodeText,
+        'font-family': FONT_FAMILY,
+        'font-size': isRoot ? 15 : 13,
+        'font-weight': isRoot ? 600 : 400,
+        'dominant-baseline': 'middle'
+      });
+      label.textContent = fitLabel(node.label, node.__w - PAD_X * 2);
+      group.appendChild(label);
+
+      if (node.children && node.children.length > 0) {
+        var ix = node.__x + node.__w - INDICATOR / 2 - 4;
+        group.appendChild(el('circle', { cx: ix, cy: cy0(node), r: 7, fill: color, 'fill-opacity': '0.85' }));
+        var sign = el('text', {
+          x: ix, y: cy0(node) + 1, fill: '#ffffff', 'font-size': 11, 'font-weight': 700,
+          'text-anchor': 'middle', 'dominant-baseline': 'middle', 'font-family': 'monospace'
+        });
+        sign.textContent = collapsed[node.id] ? '+' : '\u2212';
+        group.appendChild(sign);
+      }
+
+      group.addEventListener('click', function (event) {
+        event.stopPropagation();
+        if (!node.children || node.children.length === 0) return;
+        if (collapsed[node.id]) delete collapsed[node.id]; else collapsed[node.id] = true;
+        render();
+      });
+      group.addEventListener('mousemove', function (event) {
+        var text = node.label;
+        if (node.detail) text += '\n' + node.detail;
+        if (node.refs && node.refs.seq && node.refs.seq.length) text += '\n(seq ' + node.refs.seq.join(', ') + ')';
+        tip.textContent = text;
+        tip.hidden = false;
+        tip.style.left = Math.min(event.clientX + 14, window.innerWidth - 340) + 'px';
+        tip.style.top = (event.clientY + 16) + 'px';
+      });
+      group.addEventListener('mouseleave', function () { tip.hidden = true; });
+      nodes.appendChild(group);
+      var kids = visibleChildren(node);
+      for (var i = 0; i < kids.length; i++) walk(kids[i]);
+    })(map.root);
+
+    applyTransform();
+  }
+  function cy0(node) { return node.__y + NODE_H / 2; }
+
+  function applyTransform() {
+    world.setAttribute('transform', 'translate(' + view.x + ',' + view.y + ') scale(' + view.k + ')');
+  }
+
+  function render() { layout(); draw(); }
+
+  function fit() {
+    var box = stage.getBoundingClientRect();
+    var scale = Math.min((box.width - 120) / Math.max(1, contentSize.w), (box.height - 120) / Math.max(1, contentSize.h), 1.1);
+    view.k = Math.max(0.2, scale);
+    view.x = 60;
+    view.y = Math.max(40, (box.height - contentSize.h * view.k) / 2);
+    applyTransform();
+  }
+
+  var dragging = null;
+  stage.addEventListener('mousedown', function (event) {
+    if (event.button !== 0) return;
+    dragging = { x: event.clientX, y: event.clientY, vx: view.x, vy: view.y };
+  });
+  window.addEventListener('mousemove', function (event) {
+    if (!dragging) return;
+    view.x = dragging.vx + (event.clientX - dragging.x);
+    view.y = dragging.vy + (event.clientY - dragging.y);
+    applyTransform();
+  });
+  window.addEventListener('mouseup', function () { dragging = null; });
+  stage.addEventListener('wheel', function (event) {
+    event.preventDefault();
+    var factor = event.deltaY < 0 ? 1.12 : 1 / 1.12;
+    var next = Math.min(3, Math.max(0.15, view.k * factor));
+    var box = stage.getBoundingClientRect();
+    var px = event.clientX - box.left, py = event.clientY - box.top;
+    view.x = px - (px - view.x) * (next / view.k);
+    view.y = py - (py - view.y) * (next / view.k);
+    view.k = next;
+    applyTransform();
+  }, { passive: false });
+
+  function download(name, blob) {
+    var url = URL.createObjectURL(blob);
+    var anchor = document.createElement('a');
+    anchor.href = url; anchor.download = name;
+    document.body.appendChild(anchor); anchor.click(); anchor.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+  }
+  function exportPng() {
+    var width = Math.ceil(contentSize.w + 80);
+    var height = Math.ceil(contentSize.h + 80);
+    var clone = svg.cloneNode(true);
+    clone.setAttribute('xmlns', NS);
+    clone.setAttribute('width', width);
+    clone.setAttribute('height', height);
+    // Reset the interactive pan/zoom so the export is the whole map at 1:1.
+    var worldClone = clone.querySelector('#world');
+    if (worldClone) worldClone.setAttribute('transform', 'translate(40,40)');
+    var source = new XMLSerializer().serializeToString(clone);
+    var image = new Image();
+    var svgBlob = new Blob([source], { type: 'image/svg+xml;charset=utf-8' });
+    var svgUrl = URL.createObjectURL(svgBlob);
+    image.onload = function () {
+      var scale = 2;
+      var canvas = document.createElement('canvas');
+      canvas.width = width * scale;
+      canvas.height = height * scale;
+      var ctx = canvas.getContext('2d');
+      ctx.fillStyle = THEMES[theme].bg;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob(function (blob) { if (blob) download(payload.fileBase + '.png', blob); });
+      URL.revokeObjectURL(svgUrl);
+    };
+    image.onerror = function () { URL.revokeObjectURL(svgUrl); };
+    image.src = svgUrl;
+  }
+
+  var actions = {
+    expand: function () { collapsed = {}; render(); fit(); },
+    collapse: function () {
+      collapsed = {};
+      (function walk(node) { if (node.children && node.children.length) { collapsed[node.id] = true; for (var i = 0; i < node.children.length; i++) walk(node.children[i]); } })(map.root);
+      delete collapsed[map.root.id];
+      render(); fit();
+    },
+    fit: function () { fit(); },
+    png: exportPng,
+    md: function () { download(payload.fileBase + '.md', new Blob([payload.markdown], { type: 'text/markdown;charset=utf-8' })); },
+    mmd: function () { download(payload.fileBase + '.mmd', new Blob([payload.mermaid], { type: 'text/plain;charset=utf-8' })); },
+    theme: function () { theme = theme === 'dark' ? 'light' : 'dark'; document.documentElement.setAttribute('data-theme', theme); draw(); }
+  };
+  document.addEventListener('click', function (event) {
+    var action = event.target && event.target.getAttribute && event.target.getAttribute('data-act');
+    if (action && actions[action]) actions[action]();
+  });
+  document.getElementById('search').addEventListener('input', function (event) {
+    search = event.target.value.trim();
+    if (search) { expandToMatches(map.root); for (var depth = 0; depth < 12; depth++) expandToMatches(map.root); }
+    render();
+  });
+
+  var legend = document.getElementById('legend');
+  var used = {};
+  (function walk(node) { used[node.kind] = true; for (var i = 0; i < (node.children || []).length; i++) walk(node.children[i]); })(map.root);
+  Object.keys(used).forEach(function (kind) {
+    var chip = document.createElement('span');
+    chip.className = 'chip';
+    var dot = document.createElement('i');
+    dot.style.background = KIND_COLORS[kind] || KIND_COLORS.topic;
+    chip.appendChild(dot);
+    chip.appendChild(document.createTextNode((payload.kindLabels && payload.kindLabels[kind]) || kind));
+    legend.appendChild(chip);
+  });
+
+  document.documentElement.setAttribute('data-theme', theme);
+  render();
+  fit();
+})();
+</script>
+</body>
+</html>

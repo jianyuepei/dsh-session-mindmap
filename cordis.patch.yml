@@ -1,0 +1,21 @@
+# dsh-session-mindmap — Cordis bundle patch layer
+#
+# Declares this package as a standard DSH profile bundle: `dsh plugin add
+# dsh-session-mindmap` installs it and mounts the row below, with no manual
+# cordis.patch.yml editing.
+#
+# The row id doubles as the settings key, so keep it stable across releases.
+# `name` must be the npm package name (never a file path), and the plugin's
+# Config defaults live in lib/index.js — this row only needs to exist.
+#
+# Tune the plugin by restating the WHOLE config object here (a profile patch
+# replaces the row config wholesale, it is not deep-merged), for example:
+#
+#   - id: session-mindmap
+#     name: 'dsh-session-mindmap'
+#     config:
+#       language: en
+#       maxNodes: 120
+- insert:
+    - id: session-mindmap
+      name: 'dsh-session-mindmap'
