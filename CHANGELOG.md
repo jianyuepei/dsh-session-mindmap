@@ -31,6 +31,10 @@ Notable changes per release. This project follows [semantic versioning](https://
 
 ### Fixed
 
+- **`/mindmap` opens the artifact again.** Routing both entry points through one
+  shared request builder had hard-coded the tool's "never pop a window" rule, so
+  the command stopped opening the browser and went back to printing a path. The
+  two entry points now build their own requests, and both are tested.
 - **Truncated answers are no longer a dead end.** The prompt used to ask for
   more nodes than `maxOutputTokens` could hold, so the JSON was cut off and every
   attempt failed with "no usable JSON". Budgets now agree, a truncated object is
