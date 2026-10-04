@@ -39,9 +39,13 @@ test("openTarget launches the opener once, and does nothing for `none`", () => {
   assert.equal(openTarget("/tmp/a.html", "", undefined, spawnImpl), false);
   assert.equal(launched.length, 0);
 
+  // Platform-independent: on Linux "reveal" opens the containing directory, so
+  // the expectation has to come from the same table the implementation uses.
   assert.equal(openTarget("/tmp/a.html", "reveal", undefined, spawnImpl), true);
+  const expected = openCommandFor(process.platform, "reveal", "/tmp/a.html");
   assert.equal(launched.length, 1);
-  assert.ok(launched[0].args.includes("/tmp/a.html"));
+  assert.equal(launched[0].command, expected.command);
+  assert.deepEqual(launched[0].args, expected.args);
 });
 
 test("a failed opener is reported, never thrown", () => {
