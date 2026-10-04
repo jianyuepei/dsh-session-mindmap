@@ -1,225 +1,92 @@
 # DSH 会话脑图插件 `dsh-session-mindmap` 设计文档
 
-- 版本：**v0.3.1（M1 已实现并跑过真实会话）**
-- 目标平台：DeepSeek Harness **0.2.0-rc.2**（`dsh --version` 实测），profile `desktop`
-- 日期：2026-10-04
-- 发布形态：GitHub 开源（MIT）+ npm 可发布（包名 `dsh-session-mindmap` **未被占用**，实测 npm 404）
+- 版本：**v1.0（对应插件 0.2.0，M1/M2 已实现并通过真实会话验证）**
+- 目标平台：DeepSeek Harness **0.2.0-rc.2**
+- 发布形态：GitHub 开源（MIT）+ npm 可发布（包名 `dsh-session-mindmap`，实测未被占用）
+- 本文只写**方案设计**：要做什么、约束来自哪里、为什么这么定、怎么验证。变更历史见 [CHANGELOG.md](./CHANGELOG.md)。
 
 ---
 
-## 0. 实现状态（2026-10-04）
-
-M1 已完成，代码与本文件同目录，`node --test` **77 个用例**全绿（含用真实 `@deepseek-ai/dsh-tools` 跑的接线契约测试）。打包链路在**隔离 `DSH_HOME` 探针**里验证过：`add` → 组装树出现 `- id: session-mindmap` → 启动无报错 → `remove` 干净移除（不留悬空 bundle 条目）→ `add` 复原；版本门禁未触发，无需 `allow-version` 豁免。
-
-与本文档设计的偏差（三处，都记在这里以免文档与代码对不上）：
-
-| 偏差 | 说明 |
-|---|---|
-| 未实现 `mode: "outline"` 应急模式 | 工具最终只有 4 个参数：`sessionId` / `kinds` / `focus` / `force`。§5.4 提到的"应急结构目录"没有落地——理由见下文 D6，宁可失败也不产出易被误用的降级产物。若将来要，再补。 |
-| 分层比设计多 | 除设计中的 `lib/*`，另拆出 `lib/config-schema.js`（只用 schemastery，可独立测）、`lib/plugin.js`（工具/命令契约与 helper，不含 DSH 依赖）、`lib/pipeline.js`（主流程，不含 DSH 依赖）。目的是让 90% 的测试在没有 DSH 的干净 checkout 上就能跑。 |
-| 产物文件名到分钟 | `<sessionId>-<yyyymmdd-HHMM>.html`。同一分钟重复生成会覆盖同名文件（缓存命中时内容一致）；跨分钟各自留档。 |
-
-另新增（设计里没有、但开源需要）：`examples/demo.{html,md,mmd,png}` 与 `scripts/make-demo.mjs`、`.github/workflows/ci.yml`、`LICENSE`、`.gitignore`。
-
-### 0.1 真实会话首跑发现的两个 bug（已修）
-
-装进 desktop profile、重启 DSH 后，用**本会话本体**跑了一次 `session_mindmap`。图能出来，但暴露了两个只有真实数据才会触发的问题：
-
-| 问题 | 根因 | 修法 |
-|---|---|---|
-| 报告「1 轮」——整场会话塌成一个 block，被单轮 800/1200 字预算截断，脑图只覆盖开头（规范调研），**实现与验证阶段全丢** | `readSurface` 返回的是模型表面事件（只有 message 类），**不含 `turn/start`**（log-only 事件），而 `collectTurns` 只认 `turn/start` 作轮次边界 | 补两条边界信号：① `assistant/message` / `tool/result` 自带的 `data.turn`——块还没产出内容时采纳该编号，否则开新块；② 用户消息在上一轮已有产出时开新块（连续追发的消息仍留在一块）。另加 `index` 字段按 transcript 位置连续编号，因为一轮被切开后 DSH 的 turn 号会重复 |
-| 用户消息里混着 DSH 注入的运行时上下文（`Current runtime context…`、`[MNEMON]…`），每轮吃掉整份 800 字预算 | 注入内容与用户原话在同一 message 内（或单独成条） | 新增 `stripInjectedContext()`：整条是样板则丢弃，追加在末尾的样板按行首标记切掉。实测首轮用户文本 800 → 366 字，整场 transcript 13,645 → 11,494 字 |
-
-验证方式：把真实会话日志（644 个 zstd frame）离线重放——`collectTurns` 从 1 段变 6 段，transcript 覆盖全程。两条修复各配回归用例，其中包括一个**"表面事件形态"的夹具**，正是原来单测漏掉的那种形态（原夹具写了 `turn/start`，所以 59 个用例全绿也没抓住这个 bug）。
-
-### 0.2 M2 进展（2026-10-04，测试 77 → 94）
-
-用户提的优化点是"生成完别只给路径，给一个点击即达的链接"。落到实现上是三件事：
-
-| 项 | 做法 | 验证 |
-|---|---|---|
-| **点击即达** | 插件在 host 的 web server 上注册一条**只读路由**，把生成的文件按进程内白名单 id 回吐给浏览器；结果里给同源 Markdown 链接，文件路径仍单独一行 | 隔离探针真机验证：未知 id 命中本插件的 404 文案、`sec-fetch-site: cross-site` 返回 403、错误路径落到 SPA fallback |
-| prompt 判定标准 | 给 conclusion / decision / todo / question 写清判定规则 + 自检句（首跑 32 个节点里 0 个 todo，就是缺这个） | 单测断言规则随启用维度增减、自检句自适应 |
-| HTML 交互 | 悬停节点显示"第 N 段 · seq a-b"（靠 pipeline 传进去的 segments 映射）；工具栏加"复制大纲" | 内嵌脚本语法检查 + Chrome 无头截图 + 中英双语文案核对 |
-| 单次语言覆盖 | 工具参数 `language` 与 `/mindmap --lang=en`，不改配置就能出一张英文脑图 | 端到端用例断言 prompt 变英文、产物 `lang="en"`、结果带 `language` |
-| 分段合并稳健性 | 合并输入先丢 `detail`、再截断，避免长会话把合并 prompt 撑爆 | 单测覆盖三档预算 |
-
-### 0.3 M2 上线后的生产事故：输出预算和 prompt 要求对不上（已修）
-
-用户重启后，**在两个会话里执行 `/mindmap` 都报「模型两次都没有返回可用的脑图 JSON」**。根因不是解析器，是我自己把预算配错了：
-
-| 项 | 值 | 后果 |
-|---|---|---|
-| prompt 允许的产出 | 60 个节点，label ≤40 字 + detail ≤120 字 | 一个节点约 200 字 |
-| 那份 JSON 的实际体积 | **≈9,400 字符 ≈ 4,300 token** | 已经超过下面这个上限 |
-| `maxOutputTokens` | **4000** | 模型写到一半被硬截断，`extractJsonObject` 找不到完整对象 |
-
-所以模型**根本写不完我要求的脑图**，而重试发的是同一句指令，于是两次都撞同一堵墙。M2 加的判定标准让模型真的用满了节点预算，正好把原本就吃紧的 4000 撑爆——是我引入的。
-
-四处修改：
-
-1. **预算自洽**：`maxOutputTokens` 默认 4000 → 8000；prompt 的节点上限从 60 收到 `NODE_BUDGET.map = 35`（合并调用 45、detail 收到 60 字），并加一句"宁可少写节点，也绝不能让 JSON 写到一半就断掉"。
-2. **加一条守卫测试**：用最坏情况（节点数 × 满额 label/detail）估算 token，断言必须小于 `maxOutputTokens`。这类"两个数字悄悄失配"的 bug 靠人眼看不出来，靠测试才拦得住。
-3. **截断可救回**：`repairTruncatedJson()` 会闭合被截断的字符串与容器，把断点之前的完整部分解析出来（实测连断点所在的那个节点都能保住 label）。救回来时日志会说明"已按完整部分解析，脑图可能略短"。
-4. **失败可诊断、重试有针对性**：错误信息现在带 finish 原因、输出长度和开头 160 字；重试按失败类型换话术——截断就要求"压到 20 个节点以内、detail ≤40 字"，而不是把原指令再发一遍。
-
-同时 README 两侧各加了「故障排查」一节（保持章节数对齐，CI 的 parity 检查盯着）。
-
-### 0.4 「点击即达」第二次返工：命令结果是纯文本，链接渲染不出来（已修）
-
-用户重启后跑 `/mindmap`，图出来了，但结果里那行 `▶ [点击打开脑图](/session-mindmap/artifact?id=…)` **原样显示成了 Markdown 源码**——**GUI 的命令行结果渲染的是纯文本，不解析 Markdown**。所以"给个链接"这条路在命令入口上根本不成立。
-
-查了 DSH 原生的交付机制后改走两条路（`lib/deliver.js`）：
-
-| 入口 | 做法 | 依据 |
-|---|---|---|
-| `/mindmap`（人打的） | **直接打开产物**，没有东西要点：默认用系统默认应用打开，`--reveal` 改成在文件管理器里选中，`--no-open` 只写文件 | 人既然敲了命令，就是想看图 |
-| 工具 `session_mindmap`（模型调的） | **不弹窗**，改为在 `tools/result` 之后 `session.append("deliverables/presented", {turn, callId, files})`，让 DSH 自己渲染那张带「打开／在文件管理器中显示」动作的交付物卡片 | 照抄官方 `present` 工具的写法：它用 `ctx.sessionProjections.stateOf(session, "turnBoundary")` 拿当前轮次，在结果提交后追加事件 |
-
-文字结果也按渲染能力分开：命令结果用纯文本报告"已经做了什么"（`已用默认浏览器打开`），工具结果才带 Markdown 链接——同一个 `summarize()` 用 `{ link }` 控制。
-
-**路由形态踩了两次坑，都写进了 `lib/serve.js` 的注释**：① `/api/*` 是 Connection RPC 通道的地盘，插件的路由收不到请求（实测返回的是 SPA 的 404）；② `prefix` 路由同样不生效。最终用生态里其他插件验证过的 **exact 路由 + 查询参数**。信任判断也不再依赖"缺 `requestRejection` 就跳过"——那个守卫会静默把功能关掉（第一次探针验证就是被它坑的），改成显式的 loopback + 同源检查，`requestRejection` 只在报 403 时一票否决。
-
-
----
-
-### 0.5 M3（v0.2.0）：增量对比与历史会话入口
-
-M1/M2 交付后用户确认卡片与 todo 召回都符合预期，于是进入下一阶段。**没有选原路线图里的"触点扩展"（会话行菜单/自动批量）**，理由：那一类必须引入客户端半侧，而设计里明确列为非目标，且 DSH 原生的交付物卡片已经把"在会话里点开产物"这件事解决了。选的是设计里点名"留给 v2"、且不需要客户端半侧的两件事：
-
-| 项 | 做法 | 为什么值得做 |
-|---|---|---|
-| **增量对比** | 生成时找出同一会话的上一次脑图，做**结构化 diff**（按归一化 label 匹配，报新增/消失/层级调整/换标题），在产物里把新增节点圈出来、结果里给一行摘要 | 这个工具的用法就是"阶段结束生成一次"，那么"这一阶段新增了什么"才是它最该回答的问题。全程不调模型，确定性、零成本 |
-| **`/mindmap list`** | 列出最近会话的 id + 标题 + 时间 | 工具要的是 `sessionId`，而 GUI 只显示标题；没有这个入口，"给历史会话生成脑图"实际上无从下手 |
-
-设计要点：
-
-- 差异查询靠 `.cache/index.json`（`{sessionId, cacheKey, capturedThroughSeq, generatedAt, …}`，最多 500 条）——缓存文件名是内容哈希，靠它反查上一次是不可行的；
-- "上一次"的定义是**同一会话、`capturedThroughSeq` 严格更小、其中最新的一条**；同一水位线重跑不算"上一版"；
-- 缓存条目因此补上了 `sessionId` / `capturedThroughSeq` / `generatedAt` / `language`，否则后来的运行没法判断哪张缓存图属于这个会话；
-- diff 用归一化 label 匹配（忽略大小写、空白、中英标点），避免"Hello, World!" 与 "hello world" 被误报成一删一增；
-- HTML 里新增节点用**绿色圈 + `+` 角标**标记，而不是换颜色——kind 的颜色语义不能被抢走。
-
-**上线前自己先跑出来的一条质量问题**：同一个会话连跑两次，模型一次给了 40 个节点、一次 20 个——粒度本身不稳定。只做结构 diff 会把这个抖动全算成"新增/消失"，那样的差异报告没人会信。所以补了一条**措辞连续性**：把上一次的节点 label 连同"同一话题请沿用完全相同的措辞"一起写进 prompt（单次与合并两条路径都加），这样未变的话题能对上，差异才是真的差异。
-
-**上线后又吃到一次自己的回归**：用户报 `/mindmap` 不再自动打开浏览器、退回"只给一个路径"。根因是交付那次把命令和工具**统一到同一个 `run` 包装器**，而包装器里写死了 `openMode: "none"`（本意是"模型调用不许弹窗"）；命令算好的值塞在 `args` 里，包装器不读——两个入口的区别（一个能弹窗、一个不能）被这条隐藏在包装器里的默认值抹平了。
-
-修法不是补一行，而是**拆开**：`toolRequest` / `commandRequest` 各自构造自己那条请求，`openMode` 的决策因此写在看得见的地方。同时补了两层测试：① 两个构造器在所有 flag 与两种 config 默认值下的 `openMode`；② 端到端断言 `openMode` 真的传到"打开器"，而 `none` 永不调用它（打开器改成可注入的接缝，测试不再真的弹出浏览器窗口）。教训：**两个语义不同的入口不要共用一个带隐藏默认值的包装器**。
-
-版本 0.1.0 → **0.2.0**，并起了一份 `CHANGELOG.md`（0.2.0 / 0.1.0）。测试 109 → 133。
-
-## 1. 结论速览
+## 1. 定位与范围
 
 | 项 | 结论 |
 |---|---|
 | 一句话定位 | 把一个 DSH 会话的核心内容整理成**可离线打开的自包含 HTML 脑图**，用于阶段复盘与对外交流 |
 | 交付物 | 单个 HTML 文件（默认落在会话工作目录 `.dsh/mindmap/`），文件内自带导出 Markdown / Mermaid / PNG |
 | 触发方式 | 手动后置触发：工具 `session_mindmap`（模型可调）+ 命令 `/mindmap`（人可直接调） |
-| 插件形态 | **纯 Host 插件**：无 Client 半侧、无 GUI 面板、无构建链 |
-| 生成方式 | **必走 LLM**（跟随默认模型）；失败不静默降级 |
-| 最大技术约束 | GUI 内**没有**任何脑图/Mermaid 渲染器 → 图必须由我们的 HTML 自己渲染 |
-| 最大工程要求 | 发布到 GitHub 且方便他人理解 → 双语 README、单测、CI、MIT、`dsh-plugin` topic |
+| 插件形态 | **纯 Host 插件**：无 Client 半侧、无 GUI 面板、无构建链、无运行时依赖 |
+| 生成方式 | **必走 LLM**（默认跟随宿主默认模型）；失败不静默降级 |
+| 最大技术约束 | GUI 内没有任何脑图 / Mermaid 渲染器 → 图必须由生成的 HTML 自己渲染 |
+| 最大工程要求 | 开源且方便他人理解 → 双语 README、单测、CI、MIT、`dsh-plugin` topic |
+
+### 非目标（明确不做）
+
+- GUI 右栏面板、对话内卡片、任何 `ctx.slots` 扩展；
+- 会话结束自动生成、cron 批量、多会话汇总成一张图；
+- 产物内容上传到任何远端服务。
+
+> 会话行右键菜单属于 `ctx.slots` 扩展，因此同样在非目标内。它带来的"在会话里点开产物"已经由 DSH 原生交付物卡片覆盖（§5.5）。
 
 ---
 
-## 2. 已定稿的决策（2026-10-04）
+## 2. 设计决策
 
-| # | 决策点 | 定稿 | 说明 |
-|---|---|---|---|
-| E1 | 交付形态 | **HTML 自己看/存档**，不做 DSH 右栏面板 | 定位是"后置的、可拿给人看的产物" |
-| E2 | 触发时机 | **人工，阶段结束时生成一次**；不做自动、不做 cron 批量 | — |
-| E3 | 内容维度 | 默认勾选：**主题、结论、决策与理由、待办、未决问题**；**涉及文件默认不勾选**（可选开启） | 对应 `nodeKinds` 配置项 |
-| E4 | 输入口径 | **模型当前表面**（`sessionQuery.readSurface`） | 不读全量日志 |
-| E5 | 生成方式 | **必须走 LLM**，跟随 `ctx.agentDefaultModel` 默认模型 | 不做静默的规则降级（见 §4.6） |
-| E6 | 会话范围 | **当前会话 + 任意历史会话** | `sessionId` 参数 / `last` |
-| E7 | 产物落盘 | **`<会话 cwd>/.dsh/mindmap/`** | 便于分享；需在 README 提醒加 `.gitignore` |
-| E8 | 代码形态 | **纯 ESM JavaScript，零构建** | Host 侧手写，克隆即可改、即可装 |
-| E9 | 许可与命名 | 包名/仓库名 **`dsh-session-mindmap`**，**MIT** | npm 名字实测未被占用 |
-| E10 | 工程完备度 | **单测（`node:test`）+ GitHub Actions + 中英双语 README** | 便于他人参与与 awesome 收录 |
-
----
-
-## 3. 开发规范从哪里来
-
-### 3.1 规范来源
-
-DSH 应用自身**不随包发布插件开发文档**：系统提示给的 checkout 路径（`app.asar/dsh/`）是 Electron 的 **asar 归档**，不能当目录读取（`ls` 报 Not a directory，`read` 报 BigInt 错误）。因此本设计依据两部分：
-
-**（一）社区整理规范（第三方材料，按资料对待）**
-
-| 来源 | 内容 | 用途 |
+| # | 决策 | 理由 |
 |---|---|---|
-| [Wenaixi/dsh-plugin-dev](https://github.com/Wenaixi/dsh-plugin-dev) | `SKILL.md` + `references/*`（plugin-anatomy / tools / services / events / config / packaging / three-roles / remote-rpc / web-ui-slots / debugging）+ 6 个可运行示例 + `scaffold_plugin.mjs` / `validate_plugin.mjs` | 主规范，按 0.2.0-rc.2 编写 |
-| [omdsh-dev/dsh-plugin-dev](https://github.com/omdsh-dev/dsh-plugin-dev) | 含 `references/publish.md`、`testing.md`、`build-pitfalls.md` | **发布与测试规范**（§9 主要依据） |
-| [dsh-io/dsh-plugin-skill](https://github.com/dsh-io/dsh-plugin-skill) | `SKILL.md` | 交叉验证 |
-| [awesome-dsh-plugin CONTRIBUTING](https://github.com/billLiao/awesome-dsh-plugin/blob/main/CONTRIBUTING.md) | 收录三条硬要求：`dsh-plugin` topic、`dsh.bundle` 清单、分类 PR | §9 收录规范 |
-| [dshbase 教程](https://www.dshbase.com/blog/wx-deepseek-harness-plugin-development-tutorial/) | 首个插件教程 | 参考 |
-
-**（二）本机运行时实测**：`cordis_inspect_query` 拉真实服务/插槽契约；读已装插件源码与 `package.json` 当模板；对 `app.asar` 做字节检索。下文标注了哪些结论来自实测。
-
-### 3.2 会用到的基本规范
-
-1. **Cordis 插件**导出 `name` / `inject` / `Config`（Schemastery）/ `apply(ctx, config)`；注册皆为可逆副作用，卸载自动回滚；`inject` 里声明但运行时不存在的服务 → **插件卡 PENDING、`apply` 不执行**。
-2. **模型工具**用 `defineTool({ name, description, parameters, output, execute })` 注册到 `ctx.tools`（`inject: ['tools']`）。
-3. **双面包（Bundle）**：`package.json` 写 `dsh.bundle.patch` 指向 `cordis.patch.yml`；补丁里 `- insert: [{ id, name, config, disabled }]`。**补丁的 `config` 是整行全量替换，不是深合并**。
-4. **配置层级**：bundle patch → profile `cordis.patch.yml` → `$DSH_HOME/cordis.patch.yml` → `--patch` overlay，后层按行胜出。`settings.yaml` 已废弃。
-5. **UI 只能走插槽**（本插件 v1 不需要）。
-6. 本机实测的版本管理坑：`dsh plugin add` 装的是 latest 但**不含发布不足 24 小时**的版本；安装顺序必须 **add → 确认 node_modules 落地 → 才写 `dsh.profile.bundles`**；`peerDependencies` 与 DSH 版本不匹配会被**拒绝安装**（不是警告）。
+| D1 | 主交付是**自包含 HTML**，不用 Mermaid 作为呈现路径 | 实测 GUI 无 mermaid / markmap 渲染器（§4.1），渲染必须自带 |
+| D2 | 不直接读 session 文件，只走 `ctx.sessionQuery` | 日志是**多帧追加 zstd**（实测单会话 136+ 帧），自解析脆弱 |
+| D3 | **不做 Client 半侧 / GUI 面板** | 自看存档用 HTML 足够；同时消掉"客户端打包预设不可得、`dsh.client` 字段口径不一致"这两个最大风险 |
+| D4 | 零构建纯 ESM JS | 贡献者克隆即可改、即可装，不需要构建链；测试也不需要 DSH 在场 |
+| D5 | 不碰 `ctx.settings` 服务 | 该 API 存在两代方言；补丁行的 `config` 已够用 |
+| D6 | 维度默认 = 主题 / 结论 / 决策 / 待办 / 未决问题，**文件维度默认关** | 前五类回答"这个会话讲了什么"；文件清单是检索性问题，需要时再开 |
+| D7 | 读 `readSurface`（模型表面事件）而非全量日志 | 最贴近"这个会话到底聊了什么"，且不依赖 log-only 事件的存在性 |
+| D8 | 节点带 `refs.seq`，缓存保存独立的 JSON | 为"跳回原文"和"增量对比"留数据位；缓存 JSON 同时是可再渲染的数据源 |
+| D9 | LLM 失败**不静默降级** | 一个"长得像脑图的目录树"比明确报错更误导人 |
+| D10 | 预算必须自洽：prompt 要求的产出规模装得进 `maxOutputTokens` | 两个数字悄悄失配时，review 看不出来（§8 R1） |
+| D11 | 两个语义不同的入口**不共用**带隐藏默认值的请求构造器 | 共用过一次，把"命令能弹窗、工具不能"的区别抹平了（§8 R4） |
+| D12 | 措辞连续性：把上一次的节点 label 回喂 prompt | 模型对同一会话的粒度不稳定（实测 40 → 20 个节点），不约束措辞则增量对比是噪音 |
 
 ---
 
-## 4. 技术可行性的关键发现（本机实测）
+## 3. 开发规范来源
 
-### 4.1 GUI 里没有脑图/Mermaid 渲染器 ⚠️
+DSH **不随包发布**插件开发文档，`app.asar` 是归档、不能当目录读。规范因此来自两条腿：
 
-对 `app.asar`（121MB，未压缩存储）做原始字节检索：
+1. **社区规范库**：`Wenaixi/dsh-plugin-dev`（发布/测试）、`omdsh-dev/dsh-plugin-dev`、`awesome-dsh-plugin` 的 CONTRIBUTING（收录要求）。接口细节一律标注出处，不照抄未验证的说法。
+2. **本机实测**：`cordis_inspect_list` / `cordis_inspect_query` 拉宿主服务、事件、Slot 契约；读已安装插件的源码（`dsh-soul-md` 证明零构建手写客户端可行；`@michengai/dsh-archive-manager` 提供了 workspace 路由与信任判断的样板）。
 
-| 关键字 | 命中 | 说明 |
-|---|---|---|
-| `mermaid` | **3** | 全部无关：asciidoc 语法规则里的语言名、IANA MIME 表 `application/vnd.mermaid`、某依赖 README 示例 |
-| `markmap` | 0 | 无 |
-| `katex` | 672 | 有公式渲染 |
-| `shiki` | 149 | 代码高亮 |
+---
 
-**结论**：往对话里输出 ` ```mermaid ` 只会显示成一段高亮代码块。所以脑图必须由**我们自己的 HTML 渲染**；Mermaid 只作为 HTML 内的一个导出按钮。
+## 4. 技术约束（实测结论）
 
-### 4.2 会话数据只能走 `ctx.sessionQuery`
+### 4.1 渲染
 
-会话落盘在 `~/.dsh/sessions/<cwd-slug>/session-<id>/session.v4.jsonl.zstd`（JSONL + zstd，仅追加）。
+GUI 里 **没有** mermaid / markmap 渲染器（对 `app.asar` 做字节检索证实：只有 shiki 高亮与 katex）。→ 图由产物 HTML 自己画（内联 SVG + 原生 JS）。
 
-实测陷阱：直接读文件**不可靠**——一个 314,606 字节的会话文件里有 **136 个 zstd frame**（增量追加），`zlib.zstdDecompressSync` 只解出第一帧（只有 session header）。Node v22.22.3 确有该 API，但要自己迭代帧，脆弱且无保证。
+### 4.2 会话读取
 
-→ 只走 Host 服务（Inspect 实测存在，方法齐全）：
-
-| 方法 | 用途 |
-|---|---|
-| `readSurface(id)` | **默认输入**：当前模型表面（已剔除被替换/隐藏的事件）+ `capturedThroughSeq` |
-| `readSession(id)` | 全量逻辑日志（备用） |
-| `readTitle(id)` / `readTitleSnapshots(ids)` | 会话标题 |
-| `listSessions()` | 会话清单（解析 `last`） |
-| `listEvents(id)` / `readEvent({...})` | 轻量事件列表 / 单事件窗口（HTML 里"跳回原文"的潜力） |
-| `traceSession(id)` | 父子会话血缘（subagent 树） |
-
-事件模型：`SessionEvent = { type, seq, time, data }`；本插件关心 `turn/start`、`turn/end`、`user/message`、`assistant/message`（含 `stream`、`usage`）、`tool/call`、`tool/result`。
+- `ctx.sessionQuery.readSurface(id)` 返回**模型表面事件**：只有 `system/developer/user/assistant message` + `tool/result` 五类，**不含 `turn/start` / `turn/end`**（log-only）。
+- 因此轮次边界只能靠 `assistant/message` / `tool/result` 自带的 `data.turn` + "用户消息在上一轮已有产出时开新块"两条信号。
+- DSH 会把运行时上下文（`Current runtime context…`、`[MNEMON]…`）注入 user/message，每条约 800 字，摘要前必须剥离。
+- 会话日志 `session.v4.jsonl.zstd` 是**多帧追加**的，`zstdDecompressSync` 只能解出第一帧 → 只能走服务。
 
 ### 4.3 模型调用
 
-`ctx.llm.stream(GenerateOptions)`：
+`ctx.llm.stream(GenerateOptions{ provider, model, messages, system, maxTokens, temperature, signal, sessionId })`；`purpose` 只认官方的 `'compaction' | 'session-title'`，本插件不冒充用途、不传该字段。provider/model 取自 `ctx.agentDefaultModel.currentSelection()`（跟随默认模型，配置保留覆盖位）。
 
-```ts
-GenerateOptions {
-  provider, model, messages, system?, temperature?, maxTokens?, signal?, sessionId?,
-  purpose?: 'compaction' | 'session-title'   // ← 本版本只认这两个值
-}
-```
+### 4.4 Web 路由
 
-- 不传 `purpose`（不冒充官方用途）。
-- provider/model 来自 `ctx.agentDefaultModel.currentSelection()`（Inspect 实测：返回 detached 的 provider/model/可选 reasoning）。**当前定稿 = 跟随默认模型**，Config 保留覆盖位。
+- `/api/*` 是 Connection RPC 通道的地盘，插件注册在该前缀下的路由收不到请求（实测返回 SPA 的 404）；`prefix` 形态同样不生效。
+- 可用形态是**exact 路由 + 查询参数**，并自己做 loopback + 同源（`sec-fetch-site`）校验；`ctx.connection.requestRejection` 只在报 403 时一票否决——**不能**用"缺它就跳过注册"当守卫，那会静默关掉功能。
 
-### 4.4 能力缺口检查
+### 4.5 呈现能力决定文案形式
 
-- `find_dsh_plugin` 搜 "mindmap / 脑图 / 思维导图" **无结果** → 没有现成插件可参考，自研。
-- DSH 已有模型侧会话检索工具（`session_search` / `session_event_read` / `session_event_search` / `session_event_trace` / `session_trace`），它们是**给模型用的**；插件代码不依赖它们，直接调 `ctx.sessionQuery`。
+- GUI 的**命令结果渲染纯文本，不解析 Markdown**；工具结果所在的位置才渲染 Markdown。
+- 因此同一个 `summarize()` 输出两种形态：命令结果报告"已经做了什么"，工具结果才带 Markdown 链接。
+
+### 4.6 交付物机制
+
+DSH 原生的交付物卡片由事件驱动：在 `tools/result` **之后** `session.append("deliverables/presented", { turn, callId, files })`，其中 `turn` 取自 `ctx.sessionProjections.stateOf(session, "turnBoundary").lastTurn`（且有 `openTurnStartSeq !== null` 的前置），`files[].path` 相对会话工作目录。本插件照此实现，未引入任何客户端代码。注意交付物折叠是**按轮次**的，因此只有工具路径能产出卡片——命令执行不在任何轮次内。
 
 ---
 
@@ -230,7 +97,7 @@ GenerateOptions {
 ```
 ① 目标会话解析   参数 sessionId | 'last' | 当前会话
         ↓
-② 读取           ctx.sessionQuery.readSurface(id)
+② 读取           ctx.sessionQuery.readSurface(id) → readTitleSnapshots(id)
         ↓
 ③ 规约（纯函数，无 LLM）
                  事件流 → TurnBlock[]：{ turn, 用户意图, 助手结论, 工具名[], 涉及文件[], 错误[] }
@@ -242,85 +109,99 @@ GenerateOptions {
         ↓
 ⑥ 校验与裁剪     节点数 ≤ maxNodes、深度 ≤ maxDepth、去重、字符裁剪、保留 refs.seq
         ↓
-⑦ 渲染           MindMap JSON → 自包含 HTML（内联 CSS/JS，零外链）
+⑦ 增量对比       与同一会话的上一次脑图做结构化 diff（不调模型）
         ↓
-⑧ 缓存与返回     key = sessionId + capturedThroughSeq + model + promptVersion
+⑧ 渲染           MindMap JSON → 自包含 HTML（内联 CSS/JS，零外链）
+        ↓
+⑨ 缓存与返回     写 <hash>.json 与历史索引 index.json；返回摘要 + 交付物
 ```
 
-### 5.2 工程结构（零构建）
+### 5.2 模块结构（零构建）
 
 ```
 dsh-session-mindmap/
-├── package.json            # ESM；dsh.bundle.patch；files 白名单；peerDependencies 声明 DSH 版本区间
-├── cordis.patch.yml        # - insert: [{ id: session-mindmap, name: dsh-session-mindmap, config: {...} }]
+├── package.json          # ESM；dsh.bundle.patch；files 白名单；peerDependencies 声明 DSH 版本区间
+├── cordis.patch.yml      # - insert: [{ id: session-mindmap, name: dsh-session-mindmap }]
 ├── lib/
-│   ├── index.js            # Host 半：inject / Config / 工具 / 命令 / 路由（如需）
-│   ├── extract.js          # 事件流 → TurnBlock[]（纯函数，可单测）
-│   ├── budget.js           # token 估算、分段策略（纯函数，可单测）
-│   ├── organize.js         # LLM 调用、JSON 解析与重试、降级判定
-│   ├── schema.js           # MindMap JSON 校验 + 裁剪（纯函数，可单测）
-│   ├── render-html.js      # MindMap → 自包含 HTML（含内联渲染器）
-│   └── render-md.js        # MindMap → Markdown / Mermaid（HTML 内导出按钮也复用）
-├── tests/
-│   ├── extract.test.js     # 合成事件流边界用例
-│   ├── schema.test.js
-│   └── register.test.js    # 插件注册契约（工具名/参数/输出形状）
-├── .github/workflows/ci.yml
-├── LICENSE                 # MIT
-├── README.md               # 英文
-├── README.zh-CN.md         # 中文
-└── .gitignore
+│   ├── index.js          # Host 半：Cordis 接线（工具 / 命令 / 路由 / 交付物监听）
+│   ├── config-schema.js  # Schemastery Config（只依赖 schemastery，可独立测）
+│   ├── plugin.js         # 工具与命令契约、请求构造器、helper（不含 DSH 依赖）
+│   ├── pipeline.js       # 主流程（不含 DSH 依赖）
+│   ├── extract.js        # 事件流 → TurnBlock[]（纯函数）
+│   ├── budget.js         # token 估算与分段（纯函数）
+│   ├── organize.js       # prompt 组装、LLM 调用、JSON 解析与重试
+│   ├── schema.js         # 脑图 JSON 校验 + 裁剪 + 截断修复（纯函数）
+│   ├── diff.js           # 两次脑图的结构化对比（纯函数）
+│   ├── history.js        # 生成历史索引的读写与查询
+│   ├── deliver.js        # 打开/在文件管理器中显示、交付物事件入队
+│   ├── render-html.js    # 脑图 → 自包含 HTML（含内联渲染器）
+│   ├── render-md.js      # 脑图 → Markdown / Mermaid（HTML 内导出按钮复用）
+│   └── serve.js          # 产物只读路由（白名单 + 同源校验）
+├── scripts/make-demo.mjs # 生成 examples/ 下的离线示例
+├── tests/                # node:test，无需 DSH、无需网络
+├── .github/workflows/    # CI：测试矩阵 + demo 一致性 + 清单与 README parity
+├── examples/             # demo.html / .md / .mmd / .png
+└── README.md / README.zh-CN.md / CHANGELOG.md / LICENSE
 ```
 
-> **无 Client 半侧**（E1 定稿）：不写 `lib/client.js`、不声明 `dsh.client`、不碰 `ctx.slots`。这同时消掉了"M2 右栏面板要不要复刻官方客户端打包预设"的风险。
+> 分层动机：除 `index.js` 之外**没有任何模块 import DSH**，因此九成测试可以在干净 checkout 上跑（`npm test` 不需要安装 DSH）。
 
-### 5.3 契约草案
+### 5.3 工具契约 `session_mindmap`
 
-**工具 `session_mindmap`**（`inject: ['tools']`）：
+| 参数 | 类型 | 说明 |
+|---|---|---|
+| `sessionId` | string | 目标会话 id；省略 = 当前会话，`last` = 最近一个 |
+| `kinds` | string | 逗号分隔的维度，如 `topic,decision,todo`；默认 = 配置默认 |
+| `focus` | string | 只围绕某个主题抽取 |
+| `language` | string | `zh` / `en`，覆盖本次生成的语言 |
+| `force` | boolean | 忽略缓存重新生成 |
 
-```jsonc
-{
-  "name": "session_mindmap",
-  "description": "把会话的核心内容整理成自包含 HTML 脑图（主题/结论/决策/待办/未决问题）",
-  "parameters": {
-    "type": "object",
-    "properties": {
-      "sessionId": { "type": "string", "description": "目标会话 id；省略=当前会话，'last'=最近一个会话" },
-      "kinds":     { "type": "array", "items": { "type": "string",
-                     "enum": ["topic", "conclusion", "decision", "todo", "question", "file"] },
-                     "description": "要抽取的维度，默认不含 file" },
-      "focus":     { "type": "string", "description": "可选：只围绕某个主题抽取" },
-      "force":     { "type": "boolean", "description": "忽略缓存重新生成" }
-    }
-  },
-  "output": { /* sessionId, title, nodeCount, model, cached, htmlPath, outline(截断) */ }
-}
+输出：`sessionId / title / nodeCount / model / turns / calls / cached / htmlPath / viewPath / language / delta / addedCount / removedCount / outline`。
+
+### 5.4 命令契约 `/mindmap`
+
+```
+/mindmap list                  # 列出最近会话的 id、标题、时间
+/mindmap                       # 当前会话
+/mindmap last | <sessionId>    # 历史会话
+/mindmap --focus=主题 --kinds=topic,decision --lang=en --force
+/mindmap --open | --reveal | --no-open
 ```
 
-**命令 `/mindmap`**：`/mindmap [sessionId|last] [--kinds=topic,conclusion,...] [--focus=…] [--force] [--open]`
-——人可直接触发；`--open` 用 `ctx.subprocess` 调 `open`（macOS）打开产物。
+`list` 子命令是"给历史会话生成脑图"的入口：工具要的是 `sessionId`，而 GUI 只显示标题，没有这个入口就无从下手。
 
-**配置 `Config`（Schemastery，走补丁行 `config`）**：
+### 5.5 两种入口的差异（D11）
+
+| 入口 | 是否弹窗 | 理由 |
+|---|---|---|
+| 命令 `/mindmap`（人打的） | **打开产物**：默认系统默认应用，`--reveal` 在文件管理器中选中，`--no-open` 只写文件 | 人既然敲了命令，就是想看图 |
+| 工具 `session_mindmap`（模型调的） | **不弹窗**，改为写 `deliverables/presented` 留下原生交付物卡片 | 模型在任务中途调用，弹窗是干扰；卡片上自带打开/显示动作 |
+
+两者各有一个请求构造器（`commandRequest` / `toolRequest`），`openMode` 的决策写在看得见的地方——**不要**再合回一个带隐藏默认值的公共包装器。
+
+### 5.6 配置（Schemastery）
 
 | 字段 | 默认 | 说明 |
 |---|---|---|
 | `provider` / `model` | 空 | 空 = 跟随 `ctx.agentDefaultModel` |
-| `kinds` | `[topic, conclusion, decision, todo, question]` | **`file` 默认不开**（E3） |
+| `kinds` | 前五类 | `file` 默认不开（D6） |
+| `language` | `zh` | 产物语言 |
 | `maxInputTokens` | `24000` | 送模型的 transcript 预算 |
-| `maxBlocks` | `8` | 超预算时最多分几段 Map |
-| `maxNodes` | `80` / `maxDepth` | `4` |
-| `outputDir` | `<cwd>/.dsh/mindmap` | E7 |
+| `maxBlocks` | `8` | 超预算时最多分几段 |
+| `maxNodes` / `maxDepth` | `80` / `4` | 裁剪上限 |
+| `maxOutputTokens` | `8000` | **必须大于 prompt 要求的产出规模**（D10） |
+| `temperature` | `0.2` | 结构化输出，取低 |
+| `llmTimeoutMs` | `180000` | 单次调用超时 |
+| `outputDir` | `.dsh/mindmap` | 相对会话工作目录 |
 | `cache` | `true` | 按 `capturedThroughSeq` 命中 |
-| `openAfterBuild` | `false` | 生成后是否自动打开 |
-| `language` | `zh` | 脑图节点语言（zh / en / 跟随会话） |
+| `openAfterBuild` | `true` | 命令路径是否自动打开（工具路径不受影响） |
+| `listLimit` | `10` | `/mindmap list` 显示条数 |
 
-**脑图数据模型**：
+### 5.7 数据模型
 
 ```jsonc
 {
   "title": "会话主题",
-  "source": { "sessionId": "...", "sessionTitle": "...", "capturedThroughSeq": 137,
-              "model": "…", "generatedAt": 1791047325644, "promptVersion": 1 },
   "root": {
     "id": "n1", "label": "核心主题", "kind": "topic", "detail": "一句话概述",
     "refs": { "seq": [12, 48] },
@@ -332,133 +213,107 @@ dsh-session-mindmap/
 }
 ```
 
-`kind` 决定配色与图标；`detail` 是悬停/展开的补充；`refs.seq` 支撑"点击节点跳回原文"（v1 在 HTML 内展示 seq 编号，不做跳转；将来接 Client 半侧或 DSH 深链时直接可用）。
-
-### 5.4 "核心内容"的提取策略（必走 LLM）
-
-1. **规约（纯函数）**：按 turn 归并，每轮取 `用户消息（≤800 字）` + `助手正文（≤1200 字）` + 工具名列表 + 变更文件路径 + 错误摘要。丢弃 reasoning、stream 分片、developer/system 消息、超长的工具输出正文。
-2. **单次 LLM**：transcript 在预算内时一次调用出全图；系统提示要求**严格 JSON**（含 `kind` 与 `refs.seq`），并给出 6 个维度的枚举与产出示例。
-3. **Map-Reduce（长会话）**：超 `maxInputTokens` 时按 turn 切 ≤`maxBlocks` 段，各出局部脑图，再把**局部脑图**（不是原文）归并成总图。成本上界 = `maxBlocks + 1` 次调用。
-4. **失败处理（E5）**：JSON 解析失败 → 带校验错误回喂**重试 1 次**；仍失败 → **不产出脑图**，工具返回明确错误（模型不可用 / 上下文过长 / 输出不合法），并给出建议（换模型、加 `focus` 缩小范围、调大 `maxBlocks`）。
-   → **不做静默的规则降级**：一个长得像脑图的目录树比失败更误导。
-   → 仅供应急：`mode: "outline"`（或 `--outline`）产出**无模型的结构目录**，且产物标题与工具结果都**显著标注"未使用模型"**。默认永不自动走这条路。
-
-### 5.5 产物与缓存
-
-- 交付物：`<sessionId>-<yyyymmdd-HHMM>.html`（**单文件、零外链**，DSH 环境常在代理/离线场景）。
-- HTML 能力：横向树布局、节点折叠、滚轮缩放、拖拽平移、关键字搜索、**导出 PNG / Markdown / Mermaid**、深浅两套配色（自带，不依赖宿主主题令牌）。
-- 缓存：`<outputDir>/.cache/<hash>.json`，key 含 `capturedThroughSeq`；会话没变就秒出。缓存文件同时是"可再渲染"的数据源。
+`kind` ∈ `topic|conclusion|decision|todo|question|file`，决定配色与图例；`detail` 是补充说明；`refs.seq` 支撑"这个节点来自会话哪一段"（产物内悬停显示，将来可直接接深链）。
 
 ---
 
-## 6. 关键设计决策与理由
+## 6. 提取策略（必走 LLM）
 
-| # | 决策 | 理由 |
+1. **规约（纯函数）**：按轮归并，每轮取 `用户消息（≤800 字）` + `助手正文（≤1200 字）` + 工具名列表 + 变更文件路径 + 错误摘要。
+2. **单次调用**：transcript 在预算内时一次出全图；系统提示要求**严格 JSON**，给出各维度的判定标准与自检句，并要求产出规模不超过节点预算。
+3. **Map-Reduce（长会话）**：超 `maxInputTokens` 时按轮切 ≤ `maxBlocks` 段，各出局部脑图，再把**局部脑图**（不是原文）归并成总图。成本上界 = `maxBlocks + 1` 次调用；归并输入超预算时先丢 `detail` 再截断。
+4. **连续性（D12）**：若同一会话已有上一次的脑图，把它的节点 label 连同"同一话题沿用相同措辞"一起写进 prompt（单次与归并两条路径都加），保证增量对比可读。
+5. **失败处理（D9）**：JSON 不合法 → 带校验错误回喂**重试 1 次**，且按失败类型换话术（截断就要求更小产出）；仍失败 → **不产出脑图**，返回明确错误（含 finish 原因与输出开头），并给出建议（换模型、加 `focus`、调大 `maxBlocks`）。
+
+---
+
+## 7. 产物、缓存与增量对比
+
+- **产物**：`<sessionId>-<yyyymmdd-HHMM>.html`，单文件零外链（DSH 常在代理/离线环境）。
+- **HTML 能力**：横向树布局、节点折叠、滚轮缩放、拖拽平移、关键字搜索、悬停显示来源段（`第 N 段 · seq a-b`）、复制大纲、导出 PNG / Markdown / Mermaid、自带深浅两套配色（不依赖宿主主题令牌）、**增量对比条与明细面板**。
+- **缓存**：`<outputDir>/.cache/<hash>.json`，key = `sessionId + capturedThroughSeq + kinds + focus + model + language + maxNodes + maxDepth + promptVersion`；会话没变就秒出。缓存条目同时记录 `sessionId / capturedThroughSeq / generatedAt / language`。
+- **历史索引**：`<outputDir>/.cache/index.json`（上限 500 条）。缓存文件名是内容哈希，要靠它反查"上一次"不可行，所以单独建索引。"上一次"的定义 = **同一会话、`capturedThroughSeq` 严格更小、其中最新的一条**；同一水位线重跑不算上一版。
+- **增量对比**：对两棵节点树做结构化 diff（按归一化 label 匹配，忽略大小写/空白/中英标点），报新增 / 消失 / 层级调整 / 换主题；产物里给新增节点加绿色圈与 `+` 角标（用标记而非换色，避免抢走 `kind` 的色彩语义）。全程不调模型。
+- **产物访问**：插件在宿主 web server 上注册一条 **exact 只读路由** `/session-mindmap/artifact?id=<16 位 hex>`，按进程内白名单回吐文件；未知 id、非法路径、非同源请求分别返回明确的 404 / 400 / 403。链接是**进程级**的（生成它的 DSH 实例还在运行才有效），因此纯文本路径始终一并给出。
+
+---
+
+## 8. 失败模式与设计规则
+
+下表是从实际踩到的坑沉淀出的**规则**——不是事故记录（记录见 CHANGELOG）。这几条都有对应的守卫测试。
+
+| # | 失败模式 | 规则 |
 |---|---|---|
-| D1 | 不用 Mermaid 作为 GUI 呈现路径 | 实测 GUI 无 mermaid 渲染器（§4.1） |
-| D2 | 不直接读 session 文件，只走 `ctx.sessionQuery` | 日志是**多帧追加 zstd**（实测 1 会话 136 帧），自解析脆弱 |
-| D3 | **不做 Client 半侧 / GUI 面板** | E1 定稿 HTML 交付；顺带消掉客户端打包与字段口径不一致的风险 |
-| D4 | 零构建纯 ESM JS | E8；本地 `dsh-soul-md` 已证明手写可行，贡献者克隆即可改 |
-| D5 | 第一阶段不碰 `ctx.settings` 服务 | 该 API 存在两代方言（本地 `dsh-quick-toc` 源码里 `installSection` 与 `configure` 两条分支并存）；补丁行 `config` 已够 |
-| D6 | LLM 失败不静默降级 | E5；避免产出"像脑图但不是脑图"的误导性产物 |
-| D7 | 默认读 `readSurface` | E4；最贴近"这个会话的核心内容" |
-| D8 | 节点带 `refs.seq` 与独立的缓存 JSON | 为将来的"跳回原文"和"增量对比"留数据位，避免返工 |
+| R1 | prompt 允许 60 个节点（label 40 字 + detail 120 字 ≈ 4,300 token），而 `maxOutputTokens` 是 4000 → JSON 被硬截断，重试发同一指令继续撞墙 | **产出规模必须装进输出预算**；用最坏情况（节点数 × 满额字段）估 token 并写守卫测试；解析器要能救回被截断的 JSON（闭合未完成的字符串与容器）；错误信息必须带 finish 原因；重试按失败类型换话术 |
+| R2 | 只认 `turn/start` 切轮 → 整场会话塌成一个块并被单轮预算静默截断（症状：脑图只覆盖开头） | 只用**表面事件**能拿到的信号切轮；夹具必须采用真实日志的形态（原夹具自己写了 `turn/start`，59 个用例全绿也没抓住这个 bug） |
+| R3 | 用户消息里混入 DSH 注入的运行时上下文，每轮吃掉整个字符预算 | 摘要前剥离注入样板（整条是样板则丢弃，尾部样板按行首标记切掉） |
+| R4 | 命令与工具共用一个请求包装器，包装器里写死 `openMode: "none"` → 命令的自动打开始终不生效 | 语义不同的入口各自构造请求，**隐藏默认值是最危险的一类共享** |
+| R5 | 用"缺 `requestRejection` 就跳过注册"当守卫 → 功能被静默关掉 | 守卫失败要么降级到显式检查，要么报错；**不要静默不注册** |
+| R6 | 同一个会话两次生成粒度不同（40 vs 20 节点） → 结构 diff 全是噪音 | 把上一次的措辞回喂 prompt 要求沿用（D12） |
 
 ---
 
-## 7. 非目标（v1 明确不做）
-
-- GUI 右栏面板 / 对话内卡片 / 任何 `ctx.slots` 扩展；
-- 会话结束自动生成、cron 批量、多会话汇总成一张图；
-- 脑图版本间差异对比（"这个会话比上次多了什么"）；
-- 脑图内容上传到任何远端服务。
-
----
-
-## 8. 风险与未验证假设
+## 9. 风险与未验证假设
 
 | # | 风险 / 假设 | 现状 | 缓解 |
 |---|---|---|---|
-| R1 | GUI 不渲染 Mermaid | **已实测确认** | 主交付走自包含 HTML；Mermaid 仅作为 HTML 内导出 |
-| R2 | `present` 交付的 HTML 在 GUI 内能否预览 | **未验证** | 工具结果直接给绝对路径；`--open` 走系统浏览器；README 写清"用浏览器打开" |
-| R3 | 写文件受 DSH 文件沙箱限制 | 本会话策略为 `workspace-write`；写 `~/.dsh` 可能被拒 | 默认写会话工作区（E7），路径可配 |
-| R4 | LLM 输出非法 JSON | 常见 | 校验 + 回喂重试 1 次 + 明确失败（D6） |
-| R5 | 长会话成本 | 未知量级 | `maxInputTokens` / `maxBlocks` / 缓存三重闸门；`focus` 可缩小范围 |
-| R6 | 版本门禁 | `peerDependencies` 与 DSH 版本不匹配会被**拒绝安装** | 声明 `>=0.2.0-rc.2 <0.3.0`；必要时 `allow-version` 豁免并写进 README |
-| R7 | `ctx.sessionQuery` 是可选依赖 | Inspect 标注 optional | `ctx.get('sessionQuery')` 探测，缺失时明确报错，不静默 |
-| R8 | 命令注册契约 | `ctx.commands.register(definition)` 的 `CommandDefinition` 形状未逐字段核对 | 实现时用 Inspect 拉 `commands` 契约后再写 |
-| R9 | 真实会话数据的隐私 | 单测规范明确要求 | **测试只用合成事件流**；真实会话仅本地手动验证，绝不入库、不打印内容（§9.3） |
-
----
-
-## 9. 开源与发布规范（E9 / E10）
-
-### 9.1 仓库与元数据
-
-- 仓库名 / 包名：`dsh-session-mindmap`（npm 实测未被占用）。
-- **GitHub topic 必打 `dsh-plugin`**（awesome-dsh-plugin 收录硬要求之一）。
-- description（≤80 字符，影响收录列表文案）：
-  `DSH plugin: turn a session into a self-contained interactive HTML mind map.`
-- 收录分类：awesome-dsh-plugin 的 **💬 Sessions & Messages**（`categories/sessions-messages.md`）。
-- 收录三条件（CONTRIBUTING 原文）：仓库有 `dsh-plugin` topic、声明 `dsh.bundle` 清单（可 `dsh plugin add`）、PR 到正确分类。→ 本设计天然满足前两条。
-
-### 9.2 README 清单（中英两份，内容对齐）
-
-安装命令（`dsh plugin add dsh-session-mindmap` / 本地路径安装）→ 30 秒示例 → 配置项表格 → 工具与命令参数 → HTML 功能截图/GIF → 产物目录与 `.gitignore` 提醒 → 隐私说明（数据不出本机）→ 兼容性（DSH 0.2.0-rc.2）→ 贡献与测试命令 → License。
-
-### 9.3 测试与 CI
-
-- 框架：Node 内置 **`node:test`**（零依赖，契合"零构建"）。
-- 三类用例：
-  1. **注册契约**：`name` / `inject` / `apply` 形状 + 工具定义（名称、必填参数、枚举、`output`）。
-  2. **纯逻辑**：`extract.js`（空会话、只有用户消息、工具报错、超长文本截断）、`budget.js`（分段边界）、`schema.js`（缺字段、超深、超节点数、非法 JSON）。
-  3. **端到端（可选、opt-in）**：用一个假的 `ctx`（`llm` 返回固定 JSON、`sessionQuery` 返回合成事件）跑完整生成链路，断言产物 HTML 含预期节点。
-- **隐私红线**（来自测试规范）：不得把真实会话内容放进 fixtures、日志或 CI 输出；真实会话只做本地手动验证。
-- CI：`.github/workflows/ci.yml` — Node 22，`npm test` + 对示例配置跑一次插件清单校验（可选接社区 `validate_plugin.mjs` 思路）。
-
-### 9.4 交付前闭环清单
-
-- [ ] clean checkout 可运行（`lib/` 随仓库提交，无构建步骤）
-- [ ] `package.json` 的 `main` / `exports` / `files` 指向真实存在的文件，`files` 含 `lib` 与 `cordis.patch.yml`
-- [ ] 补丁 row id（`session-mindmap`）不与官方核心 row 冲突
-- [ ] `peerDependencies` 只声明真正用到的宿主包，版本区间对应 0.2.0-rc.2
-- [ ] 本地 `dsh plugin add` 能装、能启、`--dump-config` 能看到该行（注意 `--dump-config` 只验 YAML，**不代表能启动**）
-- [ ] 单测全绿
-- [ ] 中英 README 齐、description 与 topic 齐
-- [ ] 完整跑一次：对一条真实会话生成 HTML 并用浏览器打开验证交互
-
-### 9.5 需要你显式授权的动作（D9 授权门）
-
-以下操作我**不会擅自执行**，会先把命令与影响列出来给你确认：
-
-1. `gh repo create` / 改仓库可见性；
-2. `git commit` / `git push`（会先给待推送 diff 摘要与目标分支）；
-3. `npm publish`（需要 npm 令牌与你的确认）；
-4. 向 awesome-dsh-plugin 提 PR。
+| A1 | GUI 不渲染 Mermaid | **已实测确认** | 主交付走自包含 HTML；Mermaid 仅作导出 |
+| A2 | 超长真实会话的 Map-Reduce 质量 | **仅合成数据验证过**，真实长会话未跑 | `maxInputTokens` / `maxBlocks` 可调；`focus` 可缩小范围 |
+| A3 | 历史会话（非当前会话）生成 | 代码与单测覆盖，**未对真实历史会话手工核对** | `/mindmap list` 给出 id 后可直接指定 |
+| A4 | 写文件受 DSH 文件沙箱限制 | 会话策略为 `workspace-write` 时写 `~/.dsh` 会被拒 | 默认写会话工作区，路径可配 |
+| A5 | LLM 输出非法 JSON | 常见 | 校验 + 回喂重试 + 截断修复 + 明确失败（D9、R1） |
+| A6 | 版本门禁 | `peerDependencies` 与宿主版本不匹配会被**拒绝安装**，需人工豁免 | 声明对应版本区间；README 写明豁免命令 |
+| A7 | `ctx.sessionQuery` / `ctx.webServer` 是可选依赖 | Inspect 标注 optional | `ctx.get(...)` 探测，缺失时明确报错，不静默 |
+| A8 | 真实会话数据的隐私 | 单测规范要求 | **测试只用合成事件流**；真实会话只在本地手动验证，不入库、不打印内容 |
 
 ---
 
 ## 10. 里程碑与验收标准
 
-**M1 — Host-only MVP（本次要做的）**
-- 交付：工具 `session_mindmap` + 命令 `/mindmap` + `extract/budget/schema/organize/render-html` + 缓存 + `outline` 应急模式 + 双语 README + 单测 + CI + LICENSE。
-- 验收：
-  1. `/mindmap` 对**当前会话**生成 HTML，浏览器打开后折叠/缩放/搜索/导出可用；
-  2. 对**历史会话**（`sessionId` / `last`）同样可用；
-  3. 二次执行命中缓存（秒出）；
-  4. 一条 100+ 事件的会话不超预算、不报错；
-  5. 模型不可用/输出非法时**明确报错**，不产生"假脑图"；
-  6. 单测全绿；`dsh plugin add` 装得上、启动无 PENDING。
+**M1 — Host-only MVP**
+- 交付：工具 `session_mindmap` + 命令 `/mindmap` + 规约/预算/校验/组织/渲染 + 缓存 + 双语 README + 单测 + CI + LICENSE。
+- 验收：① 对当前会话生成 HTML，浏览器打开后折叠/缩放/搜索/导出可用；② 对历史会话（`sessionId` / `last`）同样可用；③ 二次执行命中缓存（秒出）；④ 长会话不超预算、不报错；⑤ 模型不可用或输出非法时**明确报错**，不产生"假脑图"；⑥ 单测全绿、`dsh plugin add` 装得上且启动无 PENDING。
 
-**M2 — 打磨（M1 验证后再定）**
-- 会话很长时的分段质量调优、`focus` 主题模式、HTML 交互细化（跳回原文展示、导出 PNG 质量）、英文节点语言。
-- 若届时确实想要 GUI 面板，再单开设计——**不并入 M1**。
+**M2 — 打磨（已交付）**
+- 交付物触达（命令自动打开 + 原生交付物卡片 + 只读路由）、prompt 判定标准与预算自洽、产物交互（来源段悬停、复制大纲、导出）、单次语言覆盖、分段归并稳健性。
+- 验收：真机产物在浏览器中交互正常；英文产物逐项核对；截断类报错可自愈或给出可操作的诊断。
+
+**M3 — 增量对比（v0.2.0，已交付）**
+- 交付：同一会话的上一次脑图作为对比基线（历史索引 + 结构 diff + 产物高亮 + 结果摘要）、`/mindmap list`、措辞连续性。
+- 验收：① 首次生成无对比、第二次给出正确的增删；② 对比不调模型；③ `list` 能列出可用的 id；④ 相关守卫测试全绿。
+
+**明确不做**：GUI 面板 / 客户端半侧触点 / 自动批量 / 多会话汇总 / 版本间可视化 diff（已由增量对比覆盖）。
 
 ---
 
-## 11. 附：产物形态示例（手写示意，非实测产出）
+## 11. 开源与发布规范
 
-HTML 结构（横向树）：
+### 11.1 仓库与元数据
+
+- 仓库名 / 包名：`dsh-session-mindmap`。
+- GitHub 必打 **`dsh-plugin`** topic；description 一句话、不含营销词。
+- 收录要求（awesome-dsh-plugin CONTRIBUTING）：声明 `dsh.bundle` 清单、仓库创建满 1 天、条目写成 `data/plugins/<owner>__<repo>.yml` 一个 YAML 文件（**README 由脚本生成，不要手工编辑**）、描述必须与代码相符。
+
+### 11.2 README 清单（中英两份，章节对齐）
+
+安装命令 → 30 秒示例 → 配置项表格 → 工具与命令参数 → HTML 功能介绍与截图 → 产物目录与 `.gitignore` 提醒 → 故障排查 → 隐私说明（数据不出本机）→ 兼容性 → 贡献与测试命令 → License。
+
+### 11.3 测试与 CI
+
+- 框架：Node 内置 `node:test`（零依赖，契合零构建）。
+- 四类用例：**注册契约**（`name`/`inject`/`apply` 形状、工具参数与输出）、**纯逻辑**（规约、预算、校验、diff、历史索引、渲染）、**接线**（真实 `@deepseek-ai/dsh-tools` 断言工具定义形状、请求构造器的 `openMode`）、**端到端**（假 ctx 跑完整链路，断言产物内容与交付物事件）。
+- 隐私红线：不得把真实会话内容放进 fixtures、日志或 CI 输出。
+- CI：Node 20.x / 22.x 双版本跑测试，另有两个独立 job——**清单校验**（打包内容/README parity/demo 与代码一致）。
+
+### 11.4 对外写操作的纪律
+
+对第三方仓库或公共注册表产生可见影响的操作（建仓、改可见性、push、npm publish、向收录列表提 PR），一律**先列出命令与影响、取得确认再执行**；提交内容本身要先本地自查能否通过对方的 CI。
+
+---
+
+## 12. 附录：产物形态
+
+HTML 结构（横向树，示意）：
 
 ```
 会话脑图：DSH 会话脑图插件设计                      2026-10-04 · 42 turns · 模型 deepseek-…
@@ -490,3 +345,5 @@ mindmap
       交付 HTML
       失败不降级
 ```
+
+可交互示例见 [`examples/demo.html`](./examples/demo.html)（含增量对比面板）。

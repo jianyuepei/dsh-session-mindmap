@@ -184,6 +184,8 @@ prompt 里的节点预算（`lib/organize.js` 的 `NODE_BUDGET`）必须和 `max
 
 提交 PR 前请跑 `npm test` 和 `npm run demo`；CI 会检查这两步，并且如果 `examples/` 过期会直接失败。
 
+[`DESIGN.md`](DESIGN.md) 说明这个插件为什么这么设计：实测到的约束、架构、契约，以及几条已经踩过的失败模式背后的规则。
+
 ## 许可
 
 MIT

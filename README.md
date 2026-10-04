@@ -245,6 +245,10 @@ Issues and PRs are welcome. Three ground rules:
 Please run `npm test` and `npm run demo` before opening a PR; CI checks both and
 fails if `examples/` is stale.
 
+[`DESIGN.md`](DESIGN.md) explains why the plugin is built this way: the measured
+constraints, the architecture, the contracts, and the rules behind the failure
+modes that have already been hit.
+
 ## License
 
 MIT
