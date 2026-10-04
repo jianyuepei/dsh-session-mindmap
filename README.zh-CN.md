@@ -1,5 +1,7 @@
 # dsh-session-mindmap
 
+[English](README.md) · **简体中文**
+
 [![CI](https://github.com/jianyuepei/dsh-session-mindmap/actions/workflows/ci.yml/badge.svg)](https://github.com/jianyuepei/dsh-session-mindmap/actions/workflows/ci.yml)
 
 **把一个 DSH 会话变成一张自包含的 HTML 脑图。**
@@ -159,13 +161,18 @@ scripts/make-demo.mjs 重新生成 examples/
 
 ## 参与贡献
 
-欢迎提 issue 和 PR，两条底线：
+欢迎提 issue 和 PR，三条底线：
 
 * 保持**纯 Host、零构建**——不加客户端半侧、不引入打包器、不加运行时依赖；
-* 测试和 issue 里不要出现真实会话内容。
+* 测试和 issue 里不要出现真实会话内容；
+* **[README.md](README.md) 与本文件保持同步**——两者是同一份文档的两个语言版本，不是两份文档。
 
 提交 PR 前请跑 `npm test` 和 `npm run demo`；CI 会检查这两步，并且如果 `examples/` 过期会直接失败。
 
 ## 许可
 
 MIT
+
+---
+
+[⬆ 回到顶部](#dsh-session-mindmap) · [English](README.md)

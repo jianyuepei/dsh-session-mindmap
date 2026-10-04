@@ -1,5 +1,7 @@
 # dsh-session-mindmap
 
+**English** · [简体中文](README.zh-CN.md)
+
 [![CI](https://github.com/jianyuepei/dsh-session-mindmap/actions/workflows/ci.yml/badge.svg)](https://github.com/jianyuepei/dsh-session-mindmap/actions/workflows/ci.yml)
 
 **Turn a DeepSeek Harness session into a self-contained HTML mind map.**
@@ -193,11 +195,13 @@ scripts/make-demo.mjs regenerates examples/
 
 ## Contributing
 
-Issues and PRs are welcome. Two ground rules:
+Issues and PRs are welcome. Three ground rules:
 
 * keep the plugin **host-only and build-free** — no client half, no bundler, no
   new runtime dependency;
-* keep real session content out of tests and issues.
+* keep real session content out of tests and issues;
+* **keep this file and [README.zh-CN.md](README.zh-CN.md) in sync** — they are
+  two translations of one document, not two documents.
 
 Please run `npm test` and `npm run demo` before opening a PR; CI checks both and
 fails if `examples/` is stale.
@@ -205,3 +209,7 @@ fails if `examples/` is stale.
 ## License
 
 MIT
+
+---
+
+[⬆ Back to top](#dsh-session-mindmap) · [简体中文](README.zh-CN.md)

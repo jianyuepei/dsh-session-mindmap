@@ -65,3 +65,25 @@ jobs:
             }
             console.log("manifest ok:", pkg.name, pkg.version);
           '
+
+      # The two READMEs are translations of one document, not two documents.
+      # Keeping them structurally aligned by hand drifts; this keeps them honest.
+      - name: README parity
+        run: |
+          node -e '
+            const fs = require("node:fs");
+            const fail = (message) => { console.error(message); process.exit(1); };
+            const en = fs.readFileSync("README.md", "utf8");
+            const zh = fs.readFileSync("README.zh-CN.md", "utf8");
+            if (!en.includes("](README.zh-CN.md)") || !en.includes("**English**")) {
+              fail("README.md must link to README.zh-CN.md and mark itself as English");
+            }
+            if (!zh.includes("](README.md)") || !zh.includes("**简体中文**")) {
+              fail("README.zh-CN.md must link to README.md and mark itself as 简体中文");
+            }
+            const headings = (text) => (text.match(/^## .+$/gm) ?? []).length;
+            if (headings(en) !== headings(zh)) {
+              fail(`section count drifted: README.md has ${headings(en)}, README.zh-CN.md has ${headings(zh)}`);
+            }
+            console.log(`README parity ok: ${headings(en)} sections each`);
+          '
