@@ -88,3 +88,13 @@ test("describeDelta truncates a long list of changes", () => {
   const line = describeDelta(diffMaps(before, after), "zh", 3);
   assert.match(line, /新增 9 个话题：新话题 1、新话题 2、新话题 3 等/);
 });
+
+test("collectLabels flattens a map, deduplicates and is bounded", async () => {
+  const { collectLabels } = await import("../lib/diff.js");
+  assert.deepEqual(collectLabels(BEFORE), ["根", "一直有的", "深处", "这次没了"]);
+  // Deduplication is by normalised key, so "A" and "a" are the same topic.
+  assert.deepEqual(collectLabels({ root: { label: "A", children: [{ label: "b" }, { label: "b" }] } }), ["A", "b"]);
+  assert.deepEqual(collectLabels({ root: { label: "A", children: [{ label: "a" }] } }), ["A"]);
+  assert.deepEqual(collectLabels(undefined), []);
+  assert.equal(collectLabels(BEFORE, 2).length, 2);
+});

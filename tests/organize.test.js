@@ -339,3 +339,41 @@ test("two unsalvageable truncated answers produce an actionable error", async ()
     },
   );
 });
+
+test("the previous run's labels are handed to the model as wording to reuse", () => {
+  const plain = buildUserPrompt({ sessionTitle: "会话", transcript: "记录" });
+  assert.doesNotMatch(plain, /沿用完全相同的措辞/);
+
+  const withPrevious = buildUserPrompt({
+    sessionTitle: "会话",
+    transcript: "记录",
+    previousLabels: ["关键决策", "待办"],
+  });
+  assert.match(withPrevious, /沿用完全相同的措辞/);
+  assert.match(withPrevious, /- 关键决策/);
+  assert.match(withPrevious, /- 待办/);
+
+  const merged = buildMergePrompt({
+    sessionTitle: "会话",
+    partials: "### 第 1 段\n{}",
+    language: "zh",
+    previousLabels: ["关键决策"],
+  });
+  assert.match(merged, /沿用相同措辞/);
+  assert.match(merged, /- 关键决策/);
+});
+
+test("generateMindMap passes the labels through to the call", async () => {
+  const seen = [];
+  await generateMindMap({
+    callModel: async (request) => {
+      seen.push(request.user);
+      return { text: JSON.stringify({ title: "t", root: { label: "根", kind: "topic", children: [] } }), usage: null, finish: { kind: "stop" } };
+    },
+    sessionTitle: "会话",
+    turns: turns(2),
+    config: { language: "zh", kinds: [...DEFAULT_KINDS], maxInputTokens: 24000, maxBlocks: 8 },
+    previousLabels: ["上一版的话题"],
+  });
+  assert.match(seen[0], /上一版的话题/);
+});

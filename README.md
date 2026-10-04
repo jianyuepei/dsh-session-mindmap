@@ -94,8 +94,10 @@ spend a model turn on the request itself.
   has one reports the delta — `13 → 18 nodes · +6 · -1` — lists the added and
   dropped topics, marks the new nodes in the artifact, and puts the same line in
   the result. It is a structural diff of two node trees: no model call, no cost,
-  and the same input always gives the same answer. The bookkeeping lives in
-  `.cache/index.json`.
+  and the same input always gives the same answer. The previous run's node
+  labels are handed back to the model with "reuse this wording", because two
+  runs otherwise describe the same topic differently and the diff becomes noise.
+  The bookkeeping lives in `.cache/index.json`.
 * **Interactions**: fold nodes, drag to pan, scroll to zoom, search to
   highlight, hover to see which part of the conversation a node came from
   (`segment 3 · seq 218-245`), copy the outline, and export to PNG / Markdown /

@@ -83,9 +83,10 @@ const CANNED = JSON.stringify({
 
 /** Fake `ctx` with only the services the pipeline touches. */
 function fakeContext({ answer = () => CANNED, sessions = ["session-test"], captured = 7, workspace } = {}) {
-  const state = { streams: 0 };
+  const state = { streams: 0, requests: [] };
   const llm = {
-    stream() {
+    stream(options) {
+      state.requests.push(options);
       const text = answer(state.streams);
       state.streams += 1;
       return (async function* chunks() {
@@ -421,6 +422,12 @@ test("a second, longer run reports what the phase added", async () => {
       }),
   });
   const second = await runMindMap(grown.ctx, {}, { sessionId: "session-test" });
+
+  // The prompt must offer the previous wording, otherwise two runs of the same
+  // session produce two different vocabularies and the diff is noise.
+  const prompt = grown.state.requests[0].messages[0].content[0].text;
+  assert.match(prompt, /沿用完全相同的措辞/);
+  assert.match(prompt, /- 关键结论/);
 
   assert.equal(second.addedCount, 1);
   assert.equal(second.removedCount, 2, "the first map had two topics the second one dropped");
