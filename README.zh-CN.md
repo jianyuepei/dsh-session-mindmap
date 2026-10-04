@@ -1,5 +1,7 @@
 # dsh-session-mindmap
 
+[![CI](https://github.com/jianyuepei/dsh-session-mindmap/actions/workflows/ci.yml/badge.svg)](https://github.com/jianyuepei/dsh-session-mindmap/actions/workflows/ci.yml)
+
 **把一个 DSH 会话变成一张自包含的 HTML 脑图。**
 
 一个阶段结束时执行 `/mindmap`，得到一个可以直接打开、发给别人、或存档的文件：这场会话聊了什么主题、得出了什么结论、做了哪些决策以及为什么、还剩什么待办和未决问题。文件不依赖网络、字体和 CDN，双击就能看。
@@ -22,7 +24,7 @@ dsh plugin add dsh-session-mindmap
 dsh plugin add /path/to/dsh-session-mindmap
 
 # 从 git 安装（lib/ 已随仓库提交，不触发任何构建）
-dsh plugin add github:<you>/dsh-session-mindmap
+dsh plugin add github:jianyuepei/dsh-session-mindmap
 ```
 
 要求 DSH **0.2.0-rc.2**（`dsh --version`）。声明的 peer 版本与当前 DSH 不匹配时，插件管理器会**直接拒绝安装**；能升级就升级，别急着用 `allow-version` 绕过。
@@ -131,7 +133,7 @@ sessionQuery.readSurface(id)        模型实际看到的上下文
 
 ```sh
 npm install          # 只声明一个开发镜像包（schemastery），DSH 包作为 peer 自动装进来
-npm test             # node:test，59 个用例，不联网、不需要装 DSH
+npm test             # node:test，77 个用例，不联网、不需要装 DSH
 npm run demo         # 重新生成 examples/demo.{html,md,mmd}
 ```
 

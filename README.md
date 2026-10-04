@@ -1,5 +1,7 @@
 # dsh-session-mindmap
 
+[![CI](https://github.com/jianyuepei/dsh-session-mindmap/actions/workflows/ci.yml/badge.svg)](https://github.com/jianyuepei/dsh-session-mindmap/actions/workflows/ci.yml)
+
 **Turn a DeepSeek Harness session into a self-contained HTML mind map.**
 
 At the end of a work phase, run `/mindmap` and get one portable file that shows
@@ -28,8 +30,8 @@ dsh plugin add dsh-session-mindmap
 # from a checkout (development)
 dsh plugin add /path/to/dsh-session-mindmap
 
-# from git (the built lib/ is committed, so no build step runs)
-dsh plugin add github:<you>/dsh-session-mindmap
+# from git (lib/ is committed, so no build step runs)
+dsh plugin add github:jianyuepei/dsh-session-mindmap
 ```
 
 Requires DSH **0.2.0-rc.2** (`dsh --version`). The plugin manager refuses to
@@ -161,7 +163,7 @@ usually asks about:
 
 ```sh
 npm install          # one dev mirror (schemastery); the DSH packages come in as peers
-npm test             # node:test, 59 tests, no network, no DSH install needed
+npm test             # node:test, 77 tests, no network, no DSH install needed
 npm run demo         # regenerate examples/demo.{html,md,mmd}
 ```
 

@@ -8,7 +8,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { blocksToText, clip, collectTurns, filePathsFromToolArgs, toolCallsInMessage } from "../lib/extract.js";
+import { blocksToText, clip, collectTurns, filePathsFromToolArgs, stripInjectedContext, toolCallsInMessage } from "../lib/extract.js";
 
 const T0 = 1_700_000_000_000;
 
@@ -126,6 +126,120 @@ test("collectTurns folds the log into turns and ignores plumbing events", () => 
 test("collectTurns drops turns that carry nothing worth summarising", () => {
   const events = [ev("turn/start", 1, { turn: 1 }), ev("turn/end", 2, { turn: 1, reason: { kind: "completed" } })];
   assert.equal(collectTurns(events).turns.length, 0);
+});
+
+test("collectTurns splits turns on the model surface, which has no turn/start", () => {
+  // `sessionQuery.readSurface` returns message-surface events only: no
+  // `turn/start`, no `turn/end`. The turn number on assistant/tool events is
+  // the only boundary signal, and a user message after produced output opens a
+  // new turn. Getting this wrong collapses a whole session into one block,
+  // which the per-turn character budget then silently truncates.
+  const surface = [
+    ev("user/message", 1, { role: "user", content: [{ type: "text", text: "第一轮问题" }] }),
+    ev("assistant/message", 2, {
+      turn: 1,
+      step: 1,
+      stream: [],
+      message: {
+        role: "assistant",
+        content: [
+          { type: "text", text: "第一轮回答" },
+          { type: "tool-call", id: "c1", name: "read", arguments: '{"file_path":"/a.md"}' },
+        ],
+      },
+    }),
+    ev("tool/result", 3, { turn: 1, step: 1, message: { role: "tool", content: [{ type: "text", text: "ok" }] } }),
+    ev("user/message", 4, { role: "user", content: [{ type: "text", text: "第二轮问题" }] }),
+    ev("assistant/message", 5, {
+      turn: 2,
+      step: 1,
+      stream: [],
+      message: { role: "assistant", content: [{ type: "text", text: "第二轮回答" }] },
+    }),
+    ev("user/message", 6, { role: "user", content: [{ type: "text", text: "第三轮问题" }] }),
+    ev("assistant/message", 7, {
+      turn: 3,
+      step: 1,
+      stream: [],
+      message: { role: "assistant", content: [{ type: "text", text: "第三轮回答" }] },
+    }),
+  ];
+  const { turns } = collectTurns(surface);
+  assert.equal(turns.length, 3, "the surface must not collapse into one turn");
+  assert.deepEqual(turns.map((turn) => turn.turn), [1, 2, 3], "explicit turn numbers win");
+  assert.deepEqual(turns.map((turn) => turn.user), ["第一轮问题", "第二轮问题", "第三轮问题"]);
+  assert.deepEqual(turns.map((turn) => turn.assistant), ["第一轮回答", "第二轮回答", "第三轮回答"]);
+  assert.deepEqual(turns[0].tools, ["read"]);
+  assert.deepEqual(turns[0].files, ["/a.md"]);
+});
+
+test("collectTurns splits turns by alternation when nothing carries a turn number", () => {
+  const events = [
+    ev("user/message", 1, { role: "user", content: [{ type: "text", text: "a" }] }),
+    ev("assistant/message", 2, { message: { role: "assistant", content: [{ type: "text", text: "A" }] } }),
+    ev("user/message", 3, { role: "user", content: [{ type: "text", text: "b" }] }),
+    ev("assistant/message", 4, { message: { role: "assistant", content: [{ type: "text", text: "B" }] } }),
+  ];
+  const { turns } = collectTurns(events);
+  assert.equal(turns.length, 2);
+  assert.deepEqual(turns.map((turn) => turn.user), ["a", "b"]);
+  assert.deepEqual(turns.map((turn) => turn.assistant), ["A", "B"]);
+});
+
+test("back-to-back user messages stay in one turn", () => {
+  const events = [
+    ev("user/message", 1, { role: "user", content: [{ type: "text", text: "先看这个" }] }),
+    ev("user/message", 2, { role: "user", content: [{ type: "text", text: "顺便也看那个" }] }),
+    ev("assistant/message", 3, { turn: 1, message: { role: "assistant", content: [{ type: "text", text: "都看了" }] } }),
+  ];
+  const { turns } = collectTurns(events);
+  assert.equal(turns.length, 1);
+  assert.equal(turns[0].user, "先看这个\n顺便也看那个");
+});
+
+test("a later turn number that does not match the block opens a new one", () => {
+  const events = [
+    ev("assistant/message", 1, { turn: 7, message: { role: "assistant", content: [{ type: "text", text: "七" }] } }),
+    ev("assistant/message", 2, { turn: 8, message: { role: "assistant", content: [{ type: "text", text: "八" }] } }),
+  ];
+  const { turns } = collectTurns(events);
+  assert.equal(turns.length, 2);
+  assert.deepEqual(turns.map((turn) => turn.turn), [7, 8]);
+});
+
+test("stripInjectedContext drops runtime boilerplate but keeps the user's words", () => {
+  const real = "把这个会话整理成脑图";
+  const boilerplate = "Current runtime context. This snapshot supersedes earlier snapshots.";
+  assert.equal(stripInjectedContext(`${real}\n${boilerplate}`), real, "trailing injection is cut");
+  assert.equal(stripInjectedContext(boilerplate), "", "a pure boilerplate message contributes nothing");
+  assert.equal(stripInjectedContext(`  ${real}  `), real);
+  assert.equal(stripInjectedContext("MNEMON RUNTIME MEMORY SNAPSHOT\nRevision: abc"), "");
+  assert.equal(stripInjectedContext(`${real}\n[MNEMON] Search Documents for…`), real);
+  assert.equal(stripInjectedContext(""), "");
+  assert.equal(stripInjectedContext(undefined), "");
+});
+
+test("runtime boilerplate does not open a turn of its own", () => {
+  const events = [
+    ev("user/message", 1, { role: "user", content: [{ type: "text", text: "真正的需求" }] }),
+    ev("user/message", 2, { role: "user", content: [{ type: "text", text: "Current runtime context. Snapshot…" }] }),
+    ev("assistant/message", 3, { turn: 1, message: { role: "assistant", content: [{ type: "text", text: "收到" }] } }),
+  ];
+  const { turns } = collectTurns(events);
+  assert.equal(turns.length, 1, "injected context must not split the turn");
+  assert.equal(turns[0].user, "真正的需求");
+});
+
+test("collectTurns numbers blocks by transcript position", () => {
+  const events = [
+    ev("user/message", 1, { role: "user", content: [{ type: "text", text: "一" }] }),
+    ev("assistant/message", 2, { turn: 1, message: { role: "assistant", content: [{ type: "text", text: "A" }] } }),
+    ev("user/message", 3, { role: "user", content: [{ type: "text", text: "二" }] }),
+    ev("assistant/message", 4, { turn: 2, message: { role: "assistant", content: [{ type: "text", text: "B" }] } }),
+  ];
+  const { turns } = collectTurns(events);
+  assert.deepEqual(turns.map((turn) => turn.index), [1, 2]);
+  assert.deepEqual(turns.map((turn) => turn.turn), [1, 2]);
 });
 
 test("collectTurns tolerates out-of-order and malformed events", () => {

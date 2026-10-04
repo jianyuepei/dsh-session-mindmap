@@ -1,6 +1,6 @@
 # DSH 会话脑图插件 `dsh-session-mindmap` 设计文档
 
-- 版本：**v0.3（M1 已实现）**
+- 版本：**v0.3.1（M1 已实现并跑过真实会话）**
 - 目标平台：DeepSeek Harness **0.2.0-rc.2**（`dsh --version` 实测），profile `desktop`
 - 日期：2026-10-04
 - 发布形态：GitHub 开源（MIT）+ npm 可发布（包名 `dsh-session-mindmap` **未被占用**，实测 npm 404）
@@ -9,7 +9,7 @@
 
 ## 0. 实现状态（2026-10-04）
 
-M1 已完成，代码与本文件同目录，`node --test` 59 个用例全绿（含用真实 `@deepseek-ai/dsh-tools` 跑的接线契约测试）。打包链路在**隔离 `DSH_HOME` 探针**里验证过：`add` → 组装树出现 `- id: session-mindmap` → 启动无报错 → `remove` 干净移除（不留悬空 bundle 条目）→ `add` 复原；版本门禁未触发，无需 `allow-version` 豁免。
+M1 已完成，代码与本文件同目录，`node --test` **77 个用例**全绿（含用真实 `@deepseek-ai/dsh-tools` 跑的接线契约测试）。打包链路在**隔离 `DSH_HOME` 探针**里验证过：`add` → 组装树出现 `- id: session-mindmap` → 启动无报错 → `remove` 干净移除（不留悬空 bundle 条目）→ `add` 复原；版本门禁未触发，无需 `allow-version` 豁免。
 
 与本文档设计的偏差（三处，都记在这里以免文档与代码对不上）：
 
@@ -20,6 +20,17 @@ M1 已完成，代码与本文件同目录，`node --test` 59 个用例全绿（
 | 产物文件名到分钟 | `<sessionId>-<yyyymmdd-HHMM>.html`。同一分钟重复生成会覆盖同名文件（缓存命中时内容一致）；跨分钟各自留档。 |
 
 另新增（设计里没有、但开源需要）：`examples/demo.{html,md,mmd,png}` 与 `scripts/make-demo.mjs`、`.github/workflows/ci.yml`、`LICENSE`、`.gitignore`。
+
+### 0.1 真实会话首跑发现的两个 bug（已修）
+
+装进 desktop profile、重启 DSH 后，用**本会话本体**跑了一次 `session_mindmap`。图能出来，但暴露了两个只有真实数据才会触发的问题：
+
+| 问题 | 根因 | 修法 |
+|---|---|---|
+| 报告「1 轮」——整场会话塌成一个 block，被单轮 800/1200 字预算截断，脑图只覆盖开头（规范调研），**实现与验证阶段全丢** | `readSurface` 返回的是模型表面事件（只有 message 类），**不含 `turn/start`**（log-only 事件），而 `collectTurns` 只认 `turn/start` 作轮次边界 | 补两条边界信号：① `assistant/message` / `tool/result` 自带的 `data.turn`——块还没产出内容时采纳该编号，否则开新块；② 用户消息在上一轮已有产出时开新块（连续追发的消息仍留在一块）。另加 `index` 字段按 transcript 位置连续编号，因为一轮被切开后 DSH 的 turn 号会重复 |
+| 用户消息里混着 DSH 注入的运行时上下文（`Current runtime context…`、`[MNEMON]…`），每轮吃掉整份 800 字预算 | 注入内容与用户原话在同一 message 内（或单独成条） | 新增 `stripInjectedContext()`：整条是样板则丢弃，追加在末尾的样板按行首标记切掉。实测首轮用户文本 800 → 366 字，整场 transcript 13,645 → 11,494 字 |
+
+验证方式：把真实会话日志（644 个 zstd frame）离线重放——`collectTurns` 从 1 段变 6 段，transcript 覆盖全程。两条修复各配回归用例，其中包括一个**"表面事件形态"的夹具**，正是原来单测漏掉的那种形态（原夹具写了 `turn/start`，所以 59 个用例全绿也没抓住这个 bug）。
 
 
 ---

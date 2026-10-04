@@ -32,6 +32,15 @@
     "summary"
   ],
   "license": "MIT",
+  "author": "jianyuepei",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jianyuepei/dsh-session-mindmap.git"
+  },
+  "homepage": "https://github.com/jianyuepei/dsh-session-mindmap#readme",
+  "bugs": {
+    "url": "https://github.com/jianyuepei/dsh-session-mindmap/issues"
+  },
   "peerDependencies": {
     "@deepseek-ai/dsh-tools": ">=0.2.0-rc.2 <0.3.0",
     "@deepseek-ai/schemastery": "^3.18.0"

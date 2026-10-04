@@ -28,13 +28,22 @@ test("estimateTokens counts CJK per character and latin per four", () => {
 });
 
 test("turnCost and renderTurn respect the character budgets", () => {
-  const turn = { turn: 3, firstSeq: 9, lastSeq: 11, user: "u".repeat(100), assistant: "a".repeat(100), tools: ["read"], files: [], errors: [] };
+  const turn = { index: 3, turn: 3, firstSeq: 9, lastSeq: 11, user: "u".repeat(100), assistant: "a".repeat(100), tools: ["read"], files: [], errors: [] };
   const text = renderTurn(turn, { userChars: 10, assistantChars: 20 });
-  assert.match(text, /## 第 3 轮/);
+  assert.match(text, /## 第 3 段 · seq 9-11/);
   assert.match(text, /用户: u{10}$/m);
   assert.match(text, /助手: a{20}$/m);
   assert.match(text, /工具: read/);
   assert.ok(turnCost(turn, { userChars: 10, assistantChars: 20 }) < turnCost(turn, { userChars: 100, assistantChars: 100 }));
+});
+
+test("renderTurn numbers blocks by position and keeps the DSH turn as metadata", () => {
+  const split = { index: 2, turn: 1, firstSeq: 20, lastSeq: 40, user: "u", assistant: "a", tools: [], files: [], errors: [] };
+  assert.match(renderTurn(split), /## 第 2 段 · seq 20-40 · turn 1/);
+
+  // A hand-built block without `index` still renders something sensible.
+  const legacy = { turn: 4, firstSeq: 1, lastSeq: 2, user: "u", assistant: "", tools: [], files: [], errors: [] };
+  assert.match(renderTurn(legacy), /## 第 4 段 · seq 1-2$/m);
 });
 
 test("renderTranscript joins turns with a blank line", () => {
