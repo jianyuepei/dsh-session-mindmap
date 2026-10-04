@@ -21,7 +21,8 @@
   },
   "scripts": {
     "test": "node --test",
-    "demo": "node scripts/make-demo.mjs"
+    "demo": "node scripts/make-demo.mjs",
+    "prepublishOnly": "npm test"
   },
   "keywords": [
     "dsh",
