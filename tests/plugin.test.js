@@ -14,7 +14,10 @@ import {
   artifactDir,
   buildCommandDefinition,
   buildToolOptions,
+  commandOpenMode,
+  commandRequest,
   parseCommandInput,
+  toolRequest,
   resolveConfig,
   resolveKinds,
   resolveModel,
@@ -275,4 +278,52 @@ test("the list subcommand answers without touching the model", async () => {
   const unsupported = buildCommandDefinition({ config: DEFAULT_CONFIG, run: async () => OK });
   const bad = await unsupported.handler({ rawInput: "list", agent: { id: "s" } });
   assert.equal(bad.kind, "error");
+});
+
+test("the command opens the artifact and the tool never does", () => {
+  // This is the bug that shipped in 0.2.0: one shared wrapper with a hard-coded
+  // `openMode: "none"` swallowed the command's choice, so `/mindmap` silently
+  // stopped opening the browser. The two builders are the guard.
+  assert.equal(commandRequest(parseCommandInput(""), {}, DEFAULT_CONFIG).openMode, "open");
+  assert.equal(commandRequest(parseCommandInput("--reveal"), {}, DEFAULT_CONFIG).openMode, "reveal");
+  assert.equal(commandRequest(parseCommandInput("--no-open"), {}, DEFAULT_CONFIG).openMode, "none");
+  assert.equal(
+    commandRequest(parseCommandInput(""), {}, { ...DEFAULT_CONFIG, openAfterBuild: false }).openMode,
+    "none",
+    "the config can turn the default off",
+  );
+  assert.equal(
+    commandRequest(parseCommandInput("--reveal"), {}, { ...DEFAULT_CONFIG, openAfterBuild: false }).openMode,
+    "reveal",
+    "an explicit flag beats the config",
+  );
+
+  // A model-invoked call must never pop a window, whatever the arguments say.
+  assert.equal(toolRequest({}, {}).openMode, "none");
+  assert.equal(toolRequest({ openMode: "open" }, {}).openMode, "none", "the model cannot ask for a window");
+  assert.equal(toolRequest({}, {}, { registry: "R" }).registry, "R");
+
+  // Everything else is carried through for both entry points.
+  const exec = { signal: "S", agent: { id: "a" } };
+  const invocation = { signal: "S2", agent: { id: "a2" } };
+  assert.deepEqual(toolRequest({ sessionId: "s", force: true, language: "en" }, exec), {
+    sessionId: "s",
+    kinds: undefined,
+    focus: undefined,
+    language: "en",
+    force: true,
+    openMode: "none",
+    signal: "S",
+    agent: { id: "a" },
+    registry: undefined,
+  });
+  assert.equal(commandRequest(parseCommandInput("last --lang=en -f"), invocation, DEFAULT_CONFIG).agent.id, "a2");
+  assert.equal(commandRequest(parseCommandInput("last --lang=en -f"), invocation, DEFAULT_CONFIG).force, true);
+  assert.equal(commandRequest(parseCommandInput("last --lang=en -f"), invocation, DEFAULT_CONFIG).language, "en");
+});
+
+test("commandOpenMode only ever yields a real mode", () => {
+  assert.equal(commandOpenMode({}, {}), "open");
+  assert.equal(commandOpenMode({ openMode: "nonsense" }, {}), "open");
+  assert.equal(commandOpenMode({ openMode: "" }, { openAfterBuild: false }), "none");
 });

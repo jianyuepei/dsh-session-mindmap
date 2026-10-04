@@ -457,3 +457,30 @@ test("the first run still writes an index entry for the next run to find", async
   assert.equal(history.entries[0].sessionId, "session-test");
   assert.equal(history.entries[0].capturedThroughSeq, 7);
 });
+
+test("the open mode reaches the opener, and `none` never calls it", async () => {
+  const workspace = await makeWorkspace();
+  const { ctx } = fakeContext({ workspace });
+
+  const opened = [];
+  const openTarget = (target, mode) => {
+    opened.push({ target, mode });
+    return true;
+  };
+
+  const revealed = await runMindMap(
+    ctx,
+    {},
+    { sessionId: "session-test", openMode: "reveal", openTarget, force: true },
+  );
+  assert.deepEqual(opened, [{ target: revealed.htmlPath, mode: "reveal" }]);
+  assert.equal(revealed.opened, "reveal");
+
+  const quiet = await runMindMap(
+    ctx,
+    {},
+    { sessionId: "session-test", openMode: "none", openTarget, force: true },
+  );
+  assert.equal(quiet.opened, undefined);
+  assert.equal(opened.length, 1, "the default must not open anything");
+});
