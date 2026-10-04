@@ -8,6 +8,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { DEFAULT_CONFIG } from "../lib/plugin.js";
+import { estimateTokens } from "../lib/budget.js";
 import { DEFAULT_KINDS } from "../lib/schema.js";
 import {
   buildMergePrompt,
@@ -16,6 +18,7 @@ import {
   collectStream,
   generateMindMap,
   serializePartials,
+  NODE_BUDGET,
 } from "../lib/organize.js";
 
 /** A model answer shaped like the prompt asks for. */
@@ -225,4 +228,114 @@ test("partial maps are bounded before the merge call", () => {
   const cut = serializePartials([map, map], 60);
   assert.match(cut, /超出预算的部分已截断/);
   assert.ok(cut.length < 200);
+});
+
+test("the answer budget fits inside maxOutputTokens (this bug shipped once)", () => {
+  // A single answer is bounded by `maxOutputTokens`. Asking for more nodes than
+  // the output limit can hold gets the JSON truncated mid-object, which is how
+  // `/mindmap` started failing in every session after the rubric was added.
+  const worstCase = (nodes, detailChars) =>
+    JSON.stringify({
+      title: "会话标题".repeat(10),
+      root: {
+        label: "根节点".repeat(10),
+        kind: "topic",
+        children: Array.from({ length: nodes }, () => ({
+          label: "标".repeat(40),
+          kind: "conclusion",
+          detail: "细".repeat(detailChars),
+          refs: { seq: [123456, 234567] },
+          children: [],
+        })),
+      },
+    });
+
+  const mapCase = estimateTokens(worstCase(NODE_BUDGET.map, 120));
+  const mergeCase = estimateTokens(worstCase(NODE_BUDGET.merge, NODE_BUDGET.mergeDetailChars));
+  const budget = DEFAULT_CONFIG.maxOutputTokens;
+
+  assert.ok(mapCase < budget, `map answer needs ~${mapCase} tokens, budget is ${budget}`);
+  assert.ok(mergeCase < budget, `merge answer needs ~${mergeCase} tokens, budget is ${budget}`);
+
+  // And the prompt must actually state those caps, not larger ones.
+  const prompt = buildSystemPrompt({ kinds: [...DEFAULT_KINDS], language: "zh" });
+  assert.match(prompt, new RegExp(`节点总数\\*\\*不要超过 ${NODE_BUDGET.map} 个`));
+  assert.match(prompt, /detail 不超过 120 字/);
+  const mergePrompt = buildSystemPrompt({
+    kinds: [...DEFAULT_KINDS],
+    language: "zh",
+    nodeBudget: NODE_BUDGET.merge,
+    detailChars: NODE_BUDGET.mergeDetailChars,
+  });
+  assert.match(mergePrompt, new RegExp(`不要超过 ${NODE_BUDGET.merge} 个`));
+  assert.match(mergePrompt, /detail 不超过 60 字/);
+});
+
+test("a truncated answer whose JSON cannot be salvaged is retried with a smaller ask", async () => {
+  const seen = [];
+  const good = JSON.stringify({ title: "x", root: { label: "根", kind: "topic", children: [] } });
+
+  const result = await generateMindMap({
+    callModel: async (request) => {
+      seen.push(request.user);
+      if (seen.length === 1) {
+        // Prose only: nothing to repair, and the finish says why.
+        return { text: "我先梳理一下这场会话的要点，稍后给出结构化结果。", usage: null, finish: { kind: "max-tokens" } };
+      }
+      return { text: good, usage: null, finish: { kind: "stop" } };
+    },
+    sessionTitle: "会话",
+    turns: turns(2),
+    config: { language: "zh", kinds: [...DEFAULT_KINDS], maxInputTokens: 24000, maxBlocks: 8 },
+  });
+
+  assert.equal(result.map.root.label, "根");
+  assert.equal(seen.length, 2);
+  assert.match(seen[1], /太长被截断/);
+  assert.match(seen[1], /不超过 20 个/);
+  assert.doesNotMatch(seen[1], /不是合法 JSON/, "the guidance must match the actual failure");
+});
+
+test("a JSON answer cut off mid-object is salvaged instead of failing", async () => {
+  // The whole point of the repair pass: a truncated map still holds every
+  // complete node, so the run succeeds with a slightly shorter map.
+  const cut = '{"title":"x","root":{"label":"根","kind":"topic","children":[{"label":"a","kind":"todo"},{"label":"b","kin';
+  let calls = 0;
+  const result = await generateMindMap({
+    callModel: async () => {
+      calls += 1;
+      return { text: cut, usage: null, finish: { kind: "max-tokens" } };
+    },
+    sessionTitle: "会话",
+    turns: turns(2),
+    config: { language: "zh", kinds: [...DEFAULT_KINDS], maxInputTokens: 24000, maxBlocks: 8 },
+  });
+  assert.equal(calls, 1, "no retry when the answer can be repaired");
+  assert.equal(result.map.root.label, "根");
+  // Every node that was written out survives, including the one the cut landed
+  // in: it kept its label and lost only the fields that never arrived.
+  assert.deepEqual(result.map.root.children.map((node) => node.label), ["a", "b"]);
+  assert.deepEqual(result.map.root.children.map((node) => node.kind), ["todo", "topic"]);
+});
+
+test("two unsalvageable truncated answers produce an actionable error", async () => {
+  await assert.rejects(
+    () =>
+      generateMindMap({
+        callModel: async () => ({
+          text: "抱歉，这场会话内容较多，我无法在长度限制内输出完整结果。",
+          usage: null,
+          finish: { kind: "max-tokens" },
+        }),
+        sessionTitle: "会话",
+        turns: turns(2),
+        config: { language: "zh", kinds: [...DEFAULT_KINDS], maxInputTokens: 24000, maxBlocks: 8 },
+      }),
+    (error) => {
+      assert.match(error.message, /输出达到 maxOutputTokens，被截断/);
+      assert.match(error.message, /调大 maxOutputTokens/);
+      assert.match(error.message, /模型输出开头：/);
+      return true;
+    },
+  );
 });

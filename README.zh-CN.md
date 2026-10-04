@@ -95,7 +95,7 @@ session_mindmap
 | `maxInputTokens` | `24000` | 单次模型调用的 transcript 预算。 |
 | `maxBlocks` | `8` | 长会话最多分几段生成，另加一次合并调用。 |
 | `maxNodes` / `maxDepth` | `80` / `4` | 对模型返回结果做的节点数与层数上限。 |
-| `maxOutputTokens` / `temperature` | `4000` / `0.2` | 单次生成的采样参数。 |
+| `maxOutputTokens` / `temperature` | `8000` / `0.2` | 单次生成的采样参数。**这个上限必须装得下整份回答**——一个节点大约占 label + detail 那么多字，见「故障排查」。 |
 | `llmTimeoutMs` | `180000` | 单次调用超时。 |
 | `outputDir` | `.dsh/mindmap` | 相对会话工作目录；也接受绝对路径。 |
 | `cache` | `true` | 会话没变时复用上次结果。 |
@@ -161,6 +161,15 @@ lib/render-md.js      Markdown / Mermaid / 大纲
 lib/render-html.js    自包含交付物
 scripts/make-demo.mjs 重新生成 examples/
 ```
+
+## 故障排查
+
+**报 `模型两次都没有返回可用的脑图 JSON`。** 先看错误的第一行，它写了 finish 原因：
+
+* **输出达到 maxOutputTokens，被截断**——回答太长装不下。调大 `maxOutputTokens`，或者少要一点（`--kinds=topic,conclusion`、`--focus=…`、调小 `maxNodes`）。截断不代表全丢：截断点之前写出来的内容会被解析出来，脑图会短一点，日志里也会说明。
+* **其它原因**——模型回的是散文或结构不对。换一个模型（`provider`/`model`），或用 `focus` 把范围收窄。
+
+prompt 里的节点预算（`lib/organize.js` 的 `NODE_BUDGET`）必须和 `maxOutputTokens` 匹配：**要的节点数超过输出上限装得下的量**，就会变成一整片"没有合法 JSON"的报错——这个坑踩过一次，现在有单测盯着两者不许失配。
 
 ## 参与贡献
 

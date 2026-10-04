@@ -119,7 +119,7 @@ whole `config` object, so restate every key you want to keep:
 | `maxInputTokens` | `24000` | Transcript budget for one model call. |
 | `maxBlocks` | `8` | Hard cap on map calls for a long session, plus one merge call. |
 | `maxNodes` / `maxDepth` | `80` / `4` | Clamps applied to whatever the model returns. |
-| `maxOutputTokens` / `temperature` | `4000` / `0.2` | Per-call generation settings. |
+| `maxOutputTokens` / `temperature` | `8000` / `0.2` | Per-call generation settings. A node costs roughly (label + detail) characters, so this cap has to hold the whole answer — see Troubleshooting. |
 | `llmTimeoutMs` | `180000` | Per-call timeout. |
 | `outputDir` | `.dsh/mindmap` | Relative to the session workspace; absolute paths are accepted. |
 | `cache` | `true` | Reuse the last result while the session has not grown. |
@@ -203,6 +203,24 @@ lib/render-md.js      Markdown / Mermaid / outline
 lib/render-html.js    the standalone deliverable
 scripts/make-demo.mjs regenerates examples/
 ```
+
+## Troubleshooting
+
+**`模型两次都没有返回可用的脑图 JSON` / "the model did not return usable mind-map JSON".**
+Read the first line of the error — it names the finish reason:
+
+* *output hit maxOutputTokens* — the answer was cut off because it did not fit.
+  Raise `maxOutputTokens`, or ask for less (`--kinds=topic,conclusion`,
+  `--focus=…`, a smaller `maxNodes`). A truncated answer is *not* always lost:
+  everything written before the cut is parsed, so the map comes back slightly
+  shorter and the log says so.
+* anything else — the model answered with prose or a malformed object. Try
+  another model (`provider`/`model`), or narrow the session with `focus`.
+
+The node budget in the prompt (`NODE_BUDGET` in `lib/organize.js`) and
+`maxOutputTokens` have to agree: asking for more nodes than the output limit can
+hold is what produced a wall of "no valid JSON" errors once. A test asserts the
+two stay in sync.
 
 ## Contributing
 
